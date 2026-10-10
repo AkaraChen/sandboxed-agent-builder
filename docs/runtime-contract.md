@@ -4,11 +4,11 @@ builder 交付的镜像遵循本契约；镜像 label `io.sandboxed-agent-builde
 
 ## 入口
 
-`ENTRYPOINT ["/usr/local/bin/agent-entrypoint"]`，默认 `CMD ["installation", "codex"]`。入口：
+`ENTRYPOINT ["/usr/local/bin/agent-entrypoint"]`，默认 `CMD ["serve"]`，`EXPOSE 8080`。入口：
 
 1. 安装调用方提供的 Codex 凭据：`CODEX_AUTH_JSON_FILE` 指向的 auth.json 复制到 `$CODEX_HOME/auth.json`；否则若设置 `OPENAI_API_KEY` 且尚无 auth.json，执行 `codex login --with-api-key`。镜像本身不含任何凭据。
 2. 按文件名顺序以 `/bin/sh -e` 执行 `/opt/agent/startup/*.sh`（规格中的 `scripts.startup`），每次容器启动都执行。任一失败则退出码 70，不启动 Codex。
-3. `exec oar "$@"`：容器参数就是 oar 的命令行。
+3. 参数为 `serve` 时启动 [Agent 控制 API](agent-api.md)（Hono，默认端口 8080，需要 `AGENT_API_TOKEN`）；其他参数原样交给 `exec oar "$@"`，即容器参数就是 oar 的命令行。
 
 ```sh
 docker run --rm \
@@ -18,7 +18,7 @@ docker run --rm \
   IMAGE run codex "Fix the failing test" --record /workspace/.oar/run.jsonl
 ```
 
-oar 的会话控制（`oar run`、`--resume`、`oar mcp` 等）见 oar 文档；长期通信协议由调用方与 oar 约定，builder 不定义。
+调用方通常用默认的控制 API 管理会话（打开、输入、中止、事件流、恢复），见 [agent-api.md](agent-api.md)。直接使用 oar CLI 的方式（`oar run`、`--resume`、`oar mcp` 等）见 oar 文档。
 
 ## 布局
 
@@ -31,6 +31,7 @@ oar 的会话控制（`oar run`、`--resume`、`oar mcp` 等）见 oar 文档；
 | `/etc/akhook/plugins.yml` | 合并后的插件 akhook 规则（`AKHOOK_ADDITIONAL_CONFIG_PATH`） |
 | `/opt/agent/plugins/<name>/` | 插件目录（`${PLUGIN_ROOT}`） |
 | `/opt/agent/startup/` | 启动脚本 |
+| `/opt/agent/server/` | Agent 控制 API（Hono），使用 oar CLI 安装的同版本 oar 库 |
 | `/opt/agent/manifest.json` | 构建来源：基础镜像 digest、Node 版本、`agent`（`{"type":"codex","codex":{"package","version"}}`）、oar 版本、akhook 提交、插件、启动脚本、runtimeEnv |
 | `/workspace` | 工作目录，属主 `agent`（uid 1000），供调用方挂载 |
 | `/home/agent/.codex` | `CODEX_HOME`，会话与 auth.json |
@@ -42,6 +43,7 @@ oar 的会话控制（`oar run`、`--resume`、`oar mcp` 等）见 oar 文档；
 | 变量 | 提供方 | 说明 |
 | --- | --- | --- |
 | `CODEX_AUTH_JSON_FILE` 或 `OPENAI_API_KEY` | 调用方 | Codex 凭据 |
+| `AGENT_API_TOKEN`（或 `AGENT_API_INSECURE=1`） | 调用方 | 控制 API 的 bearer token；其余 `AGENT_API_*` 见 agent-api.md |
 | `resolvedSpec.runtimeEnv` 中的变量 | 调用方 | 插件 MCP 服务器的运行时凭据/参数 |
 | `CODEX_HOME`、`AKHOOK_ADDITIONAL_CONFIG_PATH` | 镜像 | 不应覆盖 |
 

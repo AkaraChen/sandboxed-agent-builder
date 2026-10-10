@@ -22,7 +22,7 @@ go test -race -tags docker ./internal/adapter/docker   # 需要 Docker socket
 
 | 场景 | 结果 |
 | --- | --- |
-| Debian slim 基础构建（apt 脚本 + 使用 secret 的脚本 + startup） | 冷构建 2 分 13 秒（含编译 akhook），镜像 332 MB；日志中 secret 值为 `[redacted]`；镜像内无 `/run/secrets`；默认命令先执行 startup 再输出 `oar installation codex`（codex-cli 0.162.1） |
+| Debian slim 基础构建（apt 脚本 + 使用 secret 的脚本 + startup） | 冷构建 2 分 13 秒（含编译 akhook），镜像 332 MB；日志中 secret 值为 `[redacted]`；镜像内无 `/run/secrets`；当时的默认命令（`installation codex`，现已改为 `serve`）先执行 startup 再报告 codex-cli 0.162.1 |
 | Codex smoke test：`agent-entrypoint run codex "Reply with exactly the word pong…"` | 使用本机 Codex 登录的临时副本注入，`[turn completed]`，输出 `pong`（模型 gpt-6.1-sol） |
 | 插件（`testdata/plugins/probe`）Debian slim | `oar mcps codex` 列出 `probe_probe`（1 个工具）；`oar skills codex` 列出 `probe-skill`（admin，`/etc/codex/skills/probe--probe-skill`）；setup 安装的 `probe-setup-check` 可用；真实 Codex 一轮输出 `MCP=MAGIC-k123-static-ok SKILL=KUMQUAT-7 HOOK=ZEBRA-42 TOUCH=blocked`；`prompt_submit` 与 `stop` hook 的输入文件均存在；`/workspace/forbidden.txt` 未创建，oar 记录中含 akhook 的拒绝消息 |
 | 插件 Alpine 3.22（musl） | 同上全部通过（Node.js 24.21.0 musl 版来自 unofficial-builds.nodejs.org；Codex 自带 musl 二进制；akhook 静态 musl） |
@@ -41,6 +41,14 @@ scripts/smoke-image.sh IMAGE ~/.codex/auth.json ./evidence
 ```
 
 镜像需用 `testdata/plugins/probe` 构建（`plugins: [{"source": "<含该目录的 git 仓库>", "revision": "...", "path": "testdata/plugins/probe"}]`），运行时提供 `PROBE_KEY=k123`。
+
+## Agent 控制 API（镜像内 Hono 服务）
+
+- `runtime/agent-server`：`nr test` 共 5 个 node:test 用例，基于 oar 的 scripted runtime（真实的 `Session` 语义）：鉴权；打开会话、等待一轮完成、事件分页、空闲时投递、删除；运行中 steer、中止，以及忙时 `wait` 返回 409；SSE 从 `Last-Event-ID` 补发后继续推送实时事件；参数校验、会话上限和 404。
+- 真实镜像（Debian slim + probe 插件，oar 0.52.0，Codex 0.162.1）以默认命令 `serve` 启动：无 token 返回 401；`/v1/agent` 返回 agent 与 oar 版本；`/v1/agent/models` 列出 4 个模型。
+- 打开会话后，经 `input`（`wait: true`）跑了一轮真实 Codex，输出 `MCP=MAGIC-k123-static-ok SKILL=KUMQUAT-7 HOOK=ZEBRA-42 TOUCH=blocked`。`forbidden.txt` 没有被创建，两个生命周期 hook 都执行了，SSE 同时收到 14 个事件。
+- 让 Codex 执行 `sleep 90`，运行中调用 `abort`，会话变为 `idle` 且 `lastTurnOutcome: aborted`。
+- `DELETE` 返回 204。用 `resume` 重新打开同一个 thread 后，Codex 答出了上一轮得到的 `KUMQUAT-7`。用不存在的 id 恢复返回 404。
 
 ## Alpine 结论
 

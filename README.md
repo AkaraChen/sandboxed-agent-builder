@@ -23,6 +23,7 @@ printf '%s\n' "$TOKEN" | ./builder hash-token          # 填入配置 auth.calle
 ```sh
 go vet ./... && go test -race ./...
 go test -race -tags docker ./internal/adapter/docker   # 需要 Docker
+cd runtime/agent-server && ni && nr test                # 镜像内控制 API（Node.js 24）
 ```
 
 ## 职责
@@ -34,7 +35,7 @@ go test -race -tags docker ./internal/adapter/docker   # 需要 Docker
 
 AXP 保存 Agent 环境配置和构建参数，关联 `buildId` 与镜像结果，负责容器运行、重启、工作区和会话。builder 的交付物是镜像。
 
-服务由 API、构建 worker、数据库和 Docker 执行适配组成。oar 安装在产物镜像中，由调用方运行；builder 不运行 Agent。
+服务由 API、构建 worker、数据库和 Docker 执行适配组成。产物镜像里装有 oar，还带一个 Hono 写的控制 API，调用方通过它在容器里管理 agent 会话；builder 本身不运行 Agent。
 
 ## 产品选择
 
@@ -48,6 +49,7 @@ AXP 保存 Agent 环境配置和构建参数，关联 `buildId` 与镜像结果�
 
 - [API](docs/api.md)
 - [镜像运行契约](docs/runtime-contract.md)
+- [镜像内的 Agent 控制 API](docs/agent-api.md)
 - [验证记录](docs/verification.md)
 - [架构与构建生命周期](docs/architecture.md)
 - [设计交付与实现顺序](docs/roadmap.md)

@@ -54,7 +54,8 @@ func TestWrite(t *testing.T) {
 	}
 	for _, want := range []string{"FROM docker.io/library/debian:trixie-slim@sha256:base", "@openai/codex@1.2.3", "@botiverse/oar-cli@0.51.0",
 		"ADD --checksum=sha256:abc", "COPY plugins/probe /opt/agent/plugins/probe", "COPY plugins/probe/skills/one /etc/codex/skills/probe--one",
-		`ENTRYPOINT ["/usr/local/bin/agent-entrypoint"]`, "USER agent"} {
+		`ENTRYPOINT ["/usr/local/bin/agent-entrypoint"]`, "USER agent",
+		"COPY agent-server /opt/agent/server", "@botiverse/oar-cli/node_modules/@botiverse/oar", `CMD ["serve"]`, "EXPOSE 8080"} {
 		if !strings.Contains(df, want) {
 			t.Errorf("Dockerfile lacks %q", want)
 		}
@@ -64,6 +65,14 @@ func TestWrite(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "agent/startup/001-prepare-workspace.sh")); !strings.Contains(string(b), "echo start") {
 		t.Fatalf("startup file: %q", b)
+	}
+	for _, f := range []string{"agent-server/package.json", "agent-server/package-lock.json", "agent-server/src/app.js", "agent-server/src/main.js"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Errorf("context lacks %s", f)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "agent-server/node_modules")); err == nil {
+		t.Error("node_modules leaked into the context")
 	}
 	if strings.Join(p.Secrets, ",") != "npm" {
 		t.Fatalf("secrets %v", p.Secrets)

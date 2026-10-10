@@ -21,6 +21,7 @@ import (
 	"github.com/akarachen/sandboxed-agent-builder/internal/app"
 	"github.com/akarachen/sandboxed-agent-builder/internal/plugin"
 	"github.com/akarachen/sandboxed-agent-builder/internal/spec"
+	agentserver "github.com/akarachen/sandboxed-agent-builder/runtime/agent-server"
 )
 
 // Contract is the runtime contract version the generated image follows
@@ -106,6 +107,16 @@ func Write(r spec.Resolved, fetch Fetcher, dir string) (*Plan, error) {
 	if len(r.Scripts.Startup) == 0 {
 		files["agent/startup/.keep"] = ""
 	}
+	if err := fs.WalkDir(agentserver.Files, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := agentserver.Files.ReadFile(path)
+		files["agent-server/"+path] = string(data)
+		return err
+	}); err != nil {
+		return nil, err
+	}
 	df, secrets := dockerfile(r, plugins)
 	files["Dockerfile"] = df
 	for name, content := range files {
@@ -136,13 +147,25 @@ type ImageManifest struct {
 	Plugins    []spec.ResolvedPlugin `json:"plugins"`
 	Startup    []string              `json:"startup"`
 	RuntimeEnv []string              `json:"runtimeEnv"`
+	ControlAPI ControlAPI            `json:"controlApi"`
 }
+
+// ControlAPI describes the agent control API the image serves with
+// `agent-entrypoint serve` (docs/agent-api.md).
+type ControlAPI struct {
+	Version int `json:"version"`
+	Port    int `json:"port"`
+}
+
+// ControlAPIPort is the control API's default port in the container.
+const ControlAPIPort = 8080
 
 func Manifest(r spec.Resolved) ImageManifest {
 	m := ImageManifest{
 		Contract: Contract, Platform: r.Platform, Base: r.Base,
 		Node: r.Node.Version, Agent: r.Agent, Oar: r.Oar.Version, Akhook: r.Akhook.Commit,
 		Plugins: r.Plugins, RuntimeEnv: r.RuntimeEnv, Startup: []string{},
+		ControlAPI: ControlAPI{Version: 1, Port: ControlAPIPort},
 	}
 	for _, s := range r.Scripts.Startup {
 		m.Startup = append(m.Startup, s.Name)
