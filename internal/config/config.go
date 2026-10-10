@@ -50,12 +50,9 @@ type Config struct {
 	Plugins struct {
 		AllowFileSources bool `yaml:"allowFileSources"`
 	} `yaml:"plugins"`
-	// AlpineVerified opens the alpine base family; see docs/verification.md.
-	AlpineVerified bool `yaml:"alpineVerified"`
-	Upstreams      struct {
+	Upstreams struct {
 		NPMRegistry      string `yaml:"npmRegistry"`
 		NodeDist         string `yaml:"nodeDist"`
-		NodeMuslDist     string `yaml:"nodeMuslDist"`
 		AkhookRepository string `yaml:"akhookRepository"`
 		AkhookRef        string `yaml:"akhookRef"`
 		ToolchainImage   string `yaml:"toolchainImage"`
@@ -107,7 +104,6 @@ func Load(path string) (*Config, error) {
 	}
 	def(&c.Upstreams.NPMRegistry, "https://registry.npmjs.org")
 	def(&c.Upstreams.NodeDist, "https://nodejs.org/dist")
-	def(&c.Upstreams.NodeMuslDist, "https://unofficial-builds.nodejs.org/download/release")
 	def(&c.Upstreams.AkhookRepository, "https://github.com/aghub-app/akhook")
 	def(&c.Upstreams.AkhookRef, "main")
 	def(&c.Upstreams.ToolchainImage, "docker.io/library/rust:1-alpine")

@@ -35,15 +35,14 @@ const (
 )
 
 type Resolver struct {
-	Images       ImageDigester
-	HTTP         *http.Client
-	Git          *gitsource.Git
-	NPMRegistry  string // https://registry.npmjs.org
-	NodeDist     string // https://nodejs.org/dist
-	NodeMuslDist string // https://unofficial-builds.nodejs.org/download/release
-	AkhookRepo   string // https://github.com/aghub-app/akhook
-	AkhookRef    string // main
-	Toolchain    string // docker.io/library/rust:1-alpine
+	Images      ImageDigester
+	HTTP        *http.Client
+	Git         *gitsource.Git
+	NPMRegistry string // https://registry.npmjs.org
+	NodeDist    string // https://nodejs.org/dist
+	AkhookRepo  string // https://github.com/aghub-app/akhook
+	AkhookRef   string // main
+	Toolchain   string // docker.io/library/rust:1-alpine
 }
 
 var _ app.Resolver = (*Resolver)(nil)
@@ -55,8 +54,6 @@ func BaseImage(family, version string) string {
 		return "docker.io/library/debian:" + version + "-slim"
 	case spec.FamilyDebian:
 		return "docker.io/library/debian:" + version
-	case spec.FamilyAlpine:
-		return "docker.io/library/alpine:" + version
 	}
 	return ""
 }
@@ -75,7 +72,7 @@ func (r *Resolver) Resolve(ctx context.Context, s spec.Spec) (spec.Resolved, err
 	}
 	out.Base = spec.ResolvedImage{Family: s.Base.Family, Version: s.Base.Version, Image: image, Digest: digest}
 
-	if out.Node, err = r.node(ctx, s.Node.Version, s.Platform, s.Base.Family == spec.FamilyAlpine); err != nil {
+	if out.Node, err = r.node(ctx, s.Node.Version, s.Platform); err != nil {
 		return out, err
 	}
 	switch s.Agent.Type {
@@ -214,8 +211,8 @@ func nodeArch(platform string) (string, error) {
 
 // node locks Node.js: a major line resolves to the version of the official
 // latest-v<major>.x release; the tarball and its sha256 come from that
-// version's SHASUMS256.txt, on the unofficial musl builds for Alpine.
-func (r *Resolver) node(ctx context.Context, want, platform string, musl bool) (spec.ResolvedNode, error) {
+// version's SHASUMS256.txt.
+func (r *Resolver) node(ctx context.Context, want, platform string) (spec.ResolvedNode, error) {
 	arch, err := nodeArch(platform)
 	if err != nil {
 		return spec.ResolvedNode{}, err
@@ -233,9 +230,6 @@ func (r *Resolver) node(ctx context.Context, want, platform string, musl bool) (
 		version = m[1]
 	}
 	dist, file := r.NodeDist, "linux-"+arch
-	if musl {
-		dist, file = r.NodeMuslDist, "linux-"+arch+"-musl"
-	}
 	name := fmt.Sprintf("node-v%s-%s.tar.gz", version, file)
 	sums, err := r.get(ctx, fmt.Sprintf("%s/v%s/SHASUMS256.txt", dist, version), "")
 	if err != nil && !errors.Is(err, errNotFound) {

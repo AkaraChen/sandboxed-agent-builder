@@ -53,3 +53,7 @@
 ## 后续：SQLite 换成 PostgreSQL
 
 按要求去掉 SQLite，只支持 PostgreSQL，迁移改用 goose。生产代码从 3866 行变为 3849 行：goose 替代了自写的迁移器，pgx 的 `CollectRows`/`COPY`/`RETURNING` 也让存储代码更短。
+
+## 后续：移除 Alpine
+
+按评审意见移除 Alpine 基础镜像：规格只接受 `debian-slim` 与 `debian`；去掉 `alpineVerified` 配置、musl 版 Node.js 解析与 Dockerfile 的 apk 分支。生产代码从 3849 行变为 3817 行（−32）。

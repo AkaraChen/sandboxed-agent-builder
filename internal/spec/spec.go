@@ -22,7 +22,6 @@ import (
 const (
 	FamilyDebianSlim = "debian-slim"
 	FamilyDebian     = "debian"
-	FamilyAlpine     = "alpine"
 )
 
 // Output types.
@@ -112,9 +111,6 @@ type Output struct {
 type Policy struct {
 	// Platforms the Docker daemon builds natively; the first is the default.
 	Platforms []string
-	// AlpineVerified opens the alpine family. Leave it off until Codex,
-	// Node.js, oar and the plugins were verified on musl for the platform.
-	AlpineVerified bool
 	// Secrets are the build secret ids configured by the operator.
 	Secrets []string
 	// Registry reports whether registry output is configured.
@@ -123,12 +119,9 @@ type Policy struct {
 	PluginSource func(string) bool
 }
 
-// Supported releases. Debian releases are codenames, Alpine releases
-// major.minor; each is an official Docker Hub image.
-var (
-	DebianReleases = []string{"trixie", "bookworm"}
-	AlpineReleases = []string{"3.22"}
-)
+// DebianReleases are the supported Debian codenames, official Docker Hub
+// images.
+var DebianReleases = []string{"trixie", "bookworm"}
 
 const (
 	maxPlugins     = 32
@@ -160,20 +153,8 @@ func (s *Spec) Normalize(p Policy) error {
 		if !slices.Contains(DebianReleases, s.Base.Version) {
 			add("base.version: %q is not one of %v", s.Base.Version, DebianReleases)
 		}
-	case FamilyAlpine:
-		if !p.AlpineVerified {
-			add("base.family: alpine is not verified on this builder (musl compatibility of Codex, Node.js, oar and plugins); use debian-slim or debian")
-		}
-		if s.Base.Version == "" {
-			s.Base.Version = AlpineReleases[0]
-		}
-		if !slices.Contains(AlpineReleases, s.Base.Version) {
-			add("base.version: %q is not one of %v", s.Base.Version, AlpineReleases)
-		}
-	case "ubuntu":
-		add("base.family: ubuntu is not offered; use debian-slim, debian or alpine")
 	default:
-		add("base.family: %q is not one of debian-slim, debian, alpine", s.Base.Family)
+		add("base.family: %q is not offered; use debian-slim or debian", s.Base.Family)
 	}
 
 	if s.Platform == "" && len(p.Platforms) > 0 {

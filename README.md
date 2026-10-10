@@ -39,7 +39,7 @@ AXP 保存 Agent 环境配置和构建参数，关联 `buildId` 与镜像结果�
 
 ## 产品选择
 
-- 基础镜像只选官方 Alpine、Debian slim 和完整 Debian；默认 Debian slim。Alpine 3.22 已在 linux/amd64 通过验证，由配置 `alpineVerified` 开放。不使用 Ubuntu。
+- 基础镜像只选官方 Debian slim（默认）和完整 Debian，不提供 Alpine 和 Ubuntu。
 - Agent runtime 只支持 Codex，通过构建时最新稳定版 oar 驱动，记录实际解析版本。
 - 兼容 Agent Plugin 的 hook、MCP 和 skill；hook 的 runtime 适配贡献给 akhook 上游。
 - 支持逐项生成 RUN 步骤的 build 脚本，以及打包到镜像、启动时执行的 startup 脚本。

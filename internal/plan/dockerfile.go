@@ -56,7 +56,6 @@ const (
 )
 
 func dockerfile(r spec.Resolved, plugins []*plugin.Plugin) (string, []string) {
-	alpine := r.Base.Family == spec.FamilyAlpine
 	codex := r.Agent.Codex // Write checked the agent is Codex.
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
@@ -81,14 +80,9 @@ func dockerfile(r spec.Resolved, plugins []*plugin.Plugin) (string, []string) {
 	w("")
 	w("FROM %s", r.Base.Ref())
 	w("SHELL [\"/bin/sh\", \"-eu\", \"-c\"]")
-	if alpine {
-		w("RUN apk add --no-cache ca-certificates git libstdc++ \\")
-		w("    && addgroup -g %d agent && adduser -D -u %d -G agent -h %s -s /bin/sh agent \\", agentUID, agentUID, homeDir)
-	} else {
-		w("RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git \\")
-		w("    && rm -rf /var/lib/apt/lists/* \\")
-		w("    && groupadd -g %d agent && useradd -m -u %d -g agent -d %s -s /bin/sh agent \\", agentUID, agentUID, homeDir)
-	}
+	w("RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git \\")
+	w("    && rm -rf /var/lib/apt/lists/* \\")
+	w("    && groupadd -g %d agent && useradd -m -u %d -g agent -d %s -s /bin/sh agent \\", agentUID, agentUID, homeDir)
 	w("    && mkdir -p /workspace /opt/agent/startup %s/.codex %s %s && chown agent:agent /workspace %s/.codex", homeDir, plugin.SkillsDir, plugin.ImageRoot, homeDir)
 	w("COPY --from=node /node /usr/local")
 	w("RUN test \"$(node --version)\" = v%s", r.Node.Version)

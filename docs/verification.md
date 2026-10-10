@@ -25,7 +25,7 @@ go test -race -tags docker ./internal/adapter/docker   # 需要 Docker socket
 | Debian slim 基础构建（apt 脚本 + 使用 secret 的脚本 + startup） | 冷构建 2 分 13 秒（含编译 akhook），镜像 332 MB；日志中 secret 值为 `[redacted]`；镜像内无 `/run/secrets`；当时的默认命令（`installation codex`，现已改为 `serve`）先执行 startup 再报告 codex-cli 0.162.1 |
 | Codex smoke test：`agent-entrypoint run codex "Reply with exactly the word pong…"` | 使用本机 Codex 登录的临时副本注入，`[turn completed]`，输出 `pong`（模型 gpt-6.1-sol） |
 | 插件（`testdata/plugins/probe`）Debian slim | `oar mcps codex` 列出 `probe_probe`（1 个工具）；`oar skills codex` 列出 `probe-skill`（admin，`/etc/codex/skills/probe--probe-skill`）；setup 安装的 `probe-setup-check` 可用；真实 Codex 一轮输出 `MCP=MAGIC-k123-static-ok SKILL=KUMQUAT-7 HOOK=ZEBRA-42 TOUCH=blocked`；`prompt_submit` 与 `stop` hook 的输入文件均存在；`/workspace/forbidden.txt` 未创建，oar 记录中含 akhook 的拒绝消息 |
-| 插件 Alpine 3.22（musl） | 同上全部通过（Node.js 24.21.0 musl 版来自 unofficial-builds.nodejs.org；Codex 自带 musl 二进制；akhook 静态 musl） |
+| 插件 Alpine 3.22（musl） | 同上全部通过（Alpine 之后已按评审移除，此行为历史记录）（Node.js 24.21.0 musl 版来自 unofficial-builds.nodejs.org；Codex 自带 musl 二进制；akhook 静态 musl） |
 | 取消运行中的构建（`sleep 300` 脚本） | 取消接口 202 + `running` + `cancelRequestedAt`；9 秒后 `cancelled`，daemon 中无残留 `sleep` |
 | `kill -9` builder 后重启（构建进行中） | BuildKit 随会话断开停止构建；租约过期后核对为 `interrupted`（`recovered: true`），未伪造成功 |
 | 模拟“镜像已导出但未记录成功”（把成功尝试改回 running、去掉产物、租约过期） | 重启后按 attempt tag 与 label 在 daemon 找到镜像，补录 `succeeded`、`recovered: true` |
@@ -60,9 +60,9 @@ scripts/smoke-image.sh IMAGE ~/.codex/auth.json ./evidence
 - 构建在实例 1 上运行时 `kill -9` 实例 1：实例 2 在租约过期后接管（generation 1 → 2），记为 `interrupted`、`recovered: true`。
 - registry 模式：推送并核对 digest，库里 `artifact->>'registryRef'` 与 API 返回一致；删除本地镜像后按 digest 拉取成功。
 
-## Alpine 结论
+## Alpine（已移除）
 
-Alpine 3.22 在 linux/amd64 上通过与 Debian 相同的全部验证。仍默认关闭（`alpineVerified: false`），原因：Node.js 的 musl 构建来自 Node.js 的非官方构建（experimental 级别）；arm64 未验证；插件自带的原生依赖需要逐个验证。运维在目标平台跑完上面的 smoke test 后再打开。
+Alpine 3.22 曾在 linux/amd64 上通过与 Debian 相同的全部验证（上表），但按评审意见已移除：规格只接受 `debian-slim` 与 `debian`，`alpine` 在提交时被拒绝；musl 版 Node.js 下载与相关配置也一并删除。akhook 仍在 `rust:1-alpine` 构建阶段编译为静态二进制，这只是工具链选择，不影响基础镜像。
 
 ## akhook 上游核查
 

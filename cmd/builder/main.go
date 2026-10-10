@@ -161,12 +161,12 @@ func serve(log *slog.Logger, args []string) error {
 		return err
 	}
 	policy := spec.Policy{
-		Platforms: []string{platform}, AlpineVerified: c.AlpineVerified, Secrets: slices.Sorted(maps.Keys(secrets)),
+		Platforms: []string{platform}, Secrets: slices.Sorted(maps.Keys(secrets)),
 		Registry: c.Registry.Enabled, PluginSource: git.Allowed,
 	}
 	resolver := &resolve.Resolver{
 		Images: daemon, HTTP: httpClient, Git: git,
-		NPMRegistry: c.Upstreams.NPMRegistry, NodeDist: c.Upstreams.NodeDist, NodeMuslDist: c.Upstreams.NodeMuslDist,
+		NPMRegistry: c.Upstreams.NPMRegistry, NodeDist: c.Upstreams.NodeDist,
 		AkhookRepo: c.Upstreams.AkhookRepository, AkhookRef: c.Upstreams.AkhookRef, Toolchain: c.Upstreams.ToolchainImage,
 	}
 	service := &app.Service{Store: store, Resolver: resolver, Policy: func() spec.Policy { return policy }, Log: log}

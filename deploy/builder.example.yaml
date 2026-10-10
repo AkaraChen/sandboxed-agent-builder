@@ -34,14 +34,9 @@ buildSecrets:
 plugins:
   allowFileSources: false  # only https:// plugin repositories
 
-# Keep false until the alpine family passed docs/verification.md on this
-# builder's platform.
-alpineVerified: false
-
 # upstreams:
 #   npmRegistry: https://registry.npmjs.org
 #   nodeDist: https://nodejs.org/dist
-#   nodeMuslDist: https://unofficial-builds.nodejs.org/download/release
 #   akhookRepository: https://github.com/aghub-app/akhook
 #   akhookRef: main
 #   toolchainImage: docker.io/library/rust:1-alpine

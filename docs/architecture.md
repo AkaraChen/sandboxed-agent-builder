@@ -54,7 +54,7 @@ flowchart TD
 
 规格包含基础镜像、runtime/oar 版本、插件来源与版本、用户构建脚本、目标平台，以及可选输出方式。调用方的模型和指令只有在影响镜像内容时才作为构建输入。
 
-具体产品选择和字段计划见 [构建契约](build-contract.md)：只支持 Codex；基础镜像为官方 Alpine/Debian slim/完整 Debian；oar 新构建采用最新稳定版并锁定；build/startup 脚本分别定义。hook 兼容贡献到 akhook 上游。
+具体产品选择和字段计划见 [构建契约](build-contract.md)：只支持 Codex；基础镜像为官方 Debian slim/完整 Debian（不提供 Alpine）；oar 新构建采用最新稳定版并锁定；build/startup 脚本分别定义。hook 兼容贡献到 akhook 上游。
 
 基础系统与运行入口/oar → runtime → 按稳定顺序排列的插件安装步骤 → 用户构建脚本。
 

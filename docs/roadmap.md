@@ -9,7 +9,7 @@
 1. 确定构建规格、API、状态转换、数据库模型和 Docker adapter 契约。
 2. 验证 Docker socket 构建、取消、进度、镜像 ID 与重启后核对机制。
 3. 实现规格持久化、提交幂等、构建查询及 worker 领取。
-4. 实现官方 Debian slim/完整 Debian 基础环境和 Codex/oar 组装，锁定最新稳定版 oar；验证 Alpine/musl 兼容后开放。
+4. 实现官方 Debian slim/完整 Debian 基础环境和 Codex/oar 组装，锁定最新稳定版 oar（Alpine 已移除）。
 5. 审计并贡献 akhook 上游 runtime hook 适配，验证通过 oar 驱动的 Codex 能实际执行插件 hook；完成 MCP/skill 原生配置安装。
 6. 实现插件 layer 缓存、逐项 RUN 的 build 脚本、打包的 startup 脚本和临时 build secret。
 7. 实现日志增量读取、失败原因、取消、重试历史及中断恢复。

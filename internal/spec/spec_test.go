@@ -23,32 +23,26 @@ func TestDefaults(t *testing.T) {
 
 func TestRejections(t *testing.T) {
 	for name, s := range map[string]Spec{
-		"ubuntu":            {Base: Base{Family: "ubuntu"}},
-		"alpine unverified": {Base: Base{Family: FamilyAlpine}},
-		"debian release":    {Base: Base{Family: FamilyDebian, Version: "jessie"}},
-		"platform":          {Platform: "linux/s390x"},
-		"old node":          {Node: Version{Version: "22"}},
-		"codex range":       {Agent: Agent{Codex: &CodexConfig{Version: "^1.0.0"}}},
-		"agent type":        {Agent: Agent{Type: "claude"}},
-		"plugin source":     {Plugins: []Plugin{{Source: "git@github.com:x/y", Revision: "main"}}},
-		"plugin path":       {Plugins: []Plugin{{Source: "https://x/y", Revision: "main", Path: "../up"}}},
-		"no revision":       {Plugins: []Plugin{{Source: "https://x/y"}}},
-		"unknown secret":    {Scripts: Scripts{Build: []Script{{Name: "a", Run: "b", Secrets: []string{"other"}}}}},
-		"startup secret":    {Scripts: Scripts{Startup: []Script{{Name: "a", Run: "b", Secrets: []string{"npm"}}}}},
-		"empty script":      {Scripts: Scripts{Build: []Script{{Name: "a"}}}},
-		"registry off":      {Output: Output{Type: OutputRegistry, Repository: "a/b"}},
+		"ubuntu":         {Base: Base{Family: "ubuntu"}},
+		"alpine":         {Base: Base{Family: "alpine"}},
+		"debian release": {Base: Base{Family: FamilyDebian, Version: "jessie"}},
+		"platform":       {Platform: "linux/s390x"},
+		"old node":       {Node: Version{Version: "22"}},
+		"codex range":    {Agent: Agent{Codex: &CodexConfig{Version: "^1.0.0"}}},
+		"agent type":     {Agent: Agent{Type: "claude"}},
+		"plugin source":  {Plugins: []Plugin{{Source: "git@github.com:x/y", Revision: "main"}}},
+		"plugin path":    {Plugins: []Plugin{{Source: "https://x/y", Revision: "main", Path: "../up"}}},
+		"no revision":    {Plugins: []Plugin{{Source: "https://x/y"}}},
+		"unknown secret": {Scripts: Scripts{Build: []Script{{Name: "a", Run: "b", Secrets: []string{"other"}}}}},
+		"startup secret": {Scripts: Scripts{Startup: []Script{{Name: "a", Run: "b", Secrets: []string{"npm"}}}}},
+		"empty script":   {Scripts: Scripts{Build: []Script{{Name: "a"}}}},
+		"registry off":   {Output: Output{Type: OutputRegistry, Repository: "a/b"}},
 	} {
 		err := s.Normalize(policy)
 		var se *domain.SpecError
 		if !errors.As(err, &se) {
 			t.Errorf("%s: %v", name, err)
 		}
-	}
-	alpine := Spec{Base: Base{Family: FamilyAlpine}}
-	p := policy
-	p.AlpineVerified = true
-	if err := alpine.Normalize(p); err != nil || alpine.Base.Version != AlpineReleases[0] {
-		t.Fatalf("verified alpine: %v", err)
 	}
 }
 

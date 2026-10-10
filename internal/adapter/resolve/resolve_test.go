@@ -52,18 +52,18 @@ func TestNPM(t *testing.T) {
 
 func TestNode(t *testing.T) {
 	r := upstream(t, "0.51.0")
-	n, err := r.node(context.Background(), "24", "linux/amd64", false)
+	n, err := r.node(context.Background(), "24", "linux/amd64")
 	if err != nil || n.Version != "24.9.0" || n.SHA256 != "bbbb" || n.URL != r.NodeDist+"/v24.9.0/node-v24.9.0-linux-x64.tar.gz" {
 		t.Fatalf("%+v %v", n, err)
 	}
 	var se *domain.SpecError
-	if _, err := r.node(context.Background(), "26", "linux/amd64", false); !errors.As(err, &se) {
+	if _, err := r.node(context.Background(), "26", "linux/amd64"); !errors.As(err, &se) {
 		t.Fatalf("missing line: %v", err)
 	}
-	if n, err := r.node(context.Background(), "24.9.0", "linux/amd64", false); err != nil || n.SHA256 != "bbbb" {
+	if n, err := r.node(context.Background(), "24.9.0", "linux/amd64"); err != nil || n.SHA256 != "bbbb" {
 		t.Fatalf("exact: %+v %v", n, err)
 	}
-	if _, err := r.node(context.Background(), "24.9.0", "linux/arm64", false); !errors.As(err, &se) {
+	if _, err := r.node(context.Background(), "24.9.0", "linux/arm64"); !errors.As(err, &se) {
 		t.Fatalf("missing build: %v", err)
 	}
 }

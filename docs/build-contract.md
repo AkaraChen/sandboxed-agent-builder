@@ -4,7 +4,7 @@
 
 ## 基础镜像与 runtime
 
-提供官方 Alpine、Debian slim、完整 Debian 三类基础镜像，默认 Debian slim，不提供 Ubuntu。基础镜像限定到明确来源和版本，记录解析后的 digest。Alpine 使用 musl，需验证 Codex、Node.js、oar 和插件原生依赖在目标平台的兼容性后再开放，不以镜像大小代替可运行性验证。
+提供官方 Debian slim、完整 Debian 两类基础镜像，默认 Debian slim，不提供 Alpine 和 Ubuntu（Alpine 曾实现并在 amd64 上验证，按评审意见移除）。基础镜像限定到明确来源和版本，记录解析后的 digest。
 
 Agent runtime 只支持 Codex，仍通过 oar 驱动。产品参数不提供其他 runtime 选项。Codex 的版本策略需要明确并记录实际安装版本。
 
@@ -14,7 +14,7 @@ oar 默认选择提交新构建时的最新稳定版本，并在入队前解析�
 
 ```yaml
 base:
-  family: debian-slim # debian-slim | debian | alpine
+  family: debian-slim # debian-slim | debian
   version: "<明确发行版本>"
 platform: linux/amd64
 agent:

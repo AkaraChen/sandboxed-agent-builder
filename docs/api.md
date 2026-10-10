@@ -50,7 +50,7 @@
 
 除 `spec` 外均可省略；默认值见上例。字段说明：
 
-- `base.family`：`debian-slim`（默认）、`debian`、`alpine`。Debian 版本 `trixie`（默认）/`bookworm`；Alpine `3.22`，仅在配置 `alpineVerified: true` 时接受。`ubuntu` 被拒绝。
+- `base.family`：`debian-slim`（默认）或 `debian`，版本 `trixie`（默认）或 `bookworm`。其他值（包括 `alpine`、`ubuntu`）一律拒绝。
 - `platform`：只接受 Docker daemon 的原生平台（不做跨架构模拟）。
 - `node.version`：主版本线（`24`，取该线最新版本）或精确版本，至少 24（oar 的要求）。
 - `agent`：Agent runtime。`type` 目前只能是 `codex`（默认），其配置放在与类型同名的字段里：`agent.codex.version` 为 `latest` 或精确版本。这样以后增加 runtime 时只新增类型和对应字段，现有请求不变；与 `type` 不符的配置或未知类型会被拒绝。
