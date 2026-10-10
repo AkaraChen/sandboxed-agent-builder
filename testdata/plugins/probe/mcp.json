@@ -1,0 +1,1 @@
+{"mcpServers":{"probe":{"command":"node","args":["${PLUGIN_ROOT}/server.mjs"],"env":{"PROBE_TOKEN":"${PROBE_KEY}","PROBE_MODE":"static-ok"}}}}

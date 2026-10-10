@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+echo "probe setup in $PLUGIN_ROOT"
+printf '#!/bin/sh\necho probe-setup-ok\n' > "$PLUGIN_BIN/probe-setup-check"
+chmod +x "$PLUGIN_BIN/probe-setup-check"

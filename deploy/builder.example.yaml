@@ -1,0 +1,62 @@
+# sandboxed-agent-builder configuration (all keys; defaults shown where set).
+listen: 0.0.0.0:8080
+dataDir: /var/lib/sandboxed-agent-builder      # SQLite database, git cache, build contexts
+# database: /var/lib/sandboxed-agent-builder/builder.db
+
+docker:
+  host: unix:///var/run/docker.sock            # "" uses DOCKER_HOST or the default socket
+
+worker:
+  concurrency: 2           # attempts built at once by this process
+  pollInterval: 1s
+  lease: 30s               # renewed every lease/3; expired leases are reconciled
+  shutdownGrace: 20s       # then running attempts are stopped and recorded interrupted
+
+logs:
+  maxBytesPerAttempt: 8388608   # later lines are dropped and the attempt marked truncated
+
+auth:
+  callers:
+    # tokenSha256: `printf '%s\n' "$TOKEN" | builder hash-token`
+    - id: axp
+      tokenSha256: 0000000000000000000000000000000000000000000000000000000000000000
+  # anonymousCaller: dev   # local development only
+
+# Build secrets scripts may mount (scripts.build[].secrets). Values are read
+# when an attempt runs and never stored in the database, image or logs.
+buildSecrets:
+  npm_token:
+    env: NPM_TOKEN
+  # deploy_key:
+  #   file: /run/secrets/deploy_key
+
+plugins:
+  allowFileSources: false  # only https:// plugin repositories
+
+# Keep false until the alpine family passed docs/verification.md on this
+# builder's platform.
+alpineVerified: false
+
+# upstreams:
+#   npmRegistry: https://registry.npmjs.org
+#   nodeDist: https://nodejs.org/dist
+#   nodeMuslDist: https://unofficial-builds.nodejs.org/download/release
+#   akhookRepository: https://github.com/aghub-app/akhook
+#   akhookRef: main
+#   toolchainImage: docker.io/library/rust:1-alpine
+
+registry:
+  enabled: false
+  listen: 0.0.0.0:5000
+  storageDir: /var/lib/sandboxed-agent-builder/registry
+  # How the Docker daemon and callers address the registry. Loopback works
+  # without TLS for a daemon on the same host; other machines need TLS (or an
+  # insecure-registries entry).
+  publicHost: 127.0.0.1:5000
+  checkUrl: http://127.0.0.1:5000     # how the builder itself reaches it
+  # htpasswd: /etc/sandboxed-agent-builder/htpasswd   # enables basic auth
+  # username: builder                                  # the builder's push account
+  passwordEnv: SAB_REGISTRY_PASSWORD
+  secretEnv: SAB_REGISTRY_HTTP_SECRET                  # keeps uploads valid across restarts
+  # tlsCert: /etc/sandboxed-agent-builder/tls.crt
+  # tlsKey: /etc/sandboxed-agent-builder/tls.key
