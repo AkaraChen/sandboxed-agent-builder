@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/akarachen/sandboxed-agent-builder/internal/plan"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -36,8 +38,9 @@ type WorkerConfig struct {
 
 // Worker claims queued attempts and runs them.
 type Worker struct {
-	Store     Store
-	Planner   Planner
+	Store Store
+	// Fetch gives plugin repositories at their locked commits.
+	Fetch     plan.Fetcher
 	Executor  Executor
 	Publisher Publisher // nil without a registry
 	Secrets   Secrets
@@ -213,7 +216,7 @@ func (w *Worker) run(ctx context.Context, c *Claim, sink *logSink) domain.Outcom
 	}
 	defer os.RemoveAll(dir)
 	sink.add(domain.StagePlan, "builder", fmt.Sprintf("attempt %d of build %s, spec %s", c.Attempt.Number, c.Build.ID, c.Build.SpecDigest))
-	p, err := w.Planner.Plan(ctx, r, dir)
+	p, err := plan.Write(r, w.Fetch, dir)
 	if err != nil {
 		return fail(domain.StagePlan, domain.CodePlanFailed, err, nil)
 	}

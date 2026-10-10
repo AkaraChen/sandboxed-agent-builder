@@ -73,16 +73,6 @@ type Resolver interface {
 	Resolve(ctx context.Context, s spec.Spec) (spec.Resolved, error)
 }
 
-// Planner writes the build context for an attempt.
-type Planner interface {
-	Plan(ctx context.Context, r spec.Resolved, dir string) (PlanResult, error)
-}
-
-type PlanResult struct {
-	Dir     string
-	Secrets []string
-}
-
 // LogFunc receives build output lines.
 type LogFunc func(stream, text string)
 

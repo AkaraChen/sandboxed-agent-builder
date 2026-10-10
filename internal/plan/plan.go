@@ -8,7 +8,6 @@
 package plan
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -18,7 +17,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akarachen/sandboxed-agent-builder/internal/app"
 	"github.com/akarachen/sandboxed-agent-builder/internal/plugin"
 	"github.com/akarachen/sandboxed-agent-builder/internal/spec"
 	agentserver "github.com/akarachen/sandboxed-agent-builder/runtime/agent-server"
@@ -238,15 +236,4 @@ func copyTree(src, dst string) error {
 			return os.WriteFile(target, data, mode)
 		}
 	})
-}
-
-// Planner is the app.Planner over Write.
-type Planner struct{ Fetch Fetcher }
-
-func (p Planner) Plan(_ context.Context, r spec.Resolved, dir string) (app.PlanResult, error) {
-	pl, err := Write(r, p.Fetch, dir)
-	if err != nil {
-		return app.PlanResult{}, err
-	}
-	return app.PlanResult{Dir: pl.Dir, Secrets: pl.Secrets}, nil
 }

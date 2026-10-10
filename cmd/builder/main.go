@@ -40,7 +40,6 @@ import (
 	"github.com/akarachen/sandboxed-agent-builder/internal/app"
 	"github.com/akarachen/sandboxed-agent-builder/internal/config"
 	"github.com/akarachen/sandboxed-agent-builder/internal/domain"
-	"github.com/akarachen/sandboxed-agent-builder/internal/plan"
 	"github.com/akarachen/sandboxed-agent-builder/internal/spec"
 )
 
@@ -197,7 +196,7 @@ func serve(log *slog.Logger, args []string) error {
 		workerID = fmt.Sprintf("%s-%d-%s", host, os.Getpid(), domain.NewID("w")[2:10])
 	}
 	worker := &app.Worker{
-		Store: store, Planner: plan.Planner{Fetch: git}, Executor: daemon, Publisher: publisher, Secrets: secrets, Log: log,
+		Store: store, Fetch: git, Executor: daemon, Publisher: publisher, Secrets: secrets, Log: log,
 		Config: app.WorkerConfig{
 			ID: workerID, Concurrency: c.Worker.Concurrency, Poll: c.Worker.PollInterval, Lease: c.Worker.Lease,
 			WorkDir: filepath.Join(c.DataDir, "work"), MaxLogBytes: c.Logs.MaxBytesPerAttempt, Grace: c.Worker.ShutdownGrace,

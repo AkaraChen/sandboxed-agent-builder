@@ -30,16 +30,6 @@ func (r *resolver) Resolve(_ context.Context, s spec.Spec) (spec.Resolved, error
 	}, nil
 }
 
-type planner struct{}
-
-func (planner) Plan(_ context.Context, r spec.Resolved, dir string) (app.PlanResult, error) {
-	var secrets []string
-	for _, s := range r.Scripts.Build {
-		secrets = append(secrets, s.Secrets...)
-	}
-	return app.PlanResult{Dir: dir, Secrets: secrets}, nil
-}
-
 // executor builds by calling fn, or blocks until ctx is done when block is
 // set.
 type executor struct {
@@ -123,7 +113,7 @@ func setup(t *testing.T) *env {
 	policy := spec.Policy{Platforms: []string{"linux/amd64"}, Secrets: []string{"tok"}, Registry: true, PluginSource: func(string) bool { return true }}
 	e.service = &app.Service{Store: store, Resolver: e.resolver, Policy: func() spec.Policy { return policy }, Log: log}
 	e.worker = &app.Worker{
-		Store: store, Planner: planner{}, Executor: e.exec, Publisher: e.pub, Secrets: secrets{"tok": "very-secret-token"}, Log: log,
+		Store: store, Executor: e.exec, Publisher: e.pub, Secrets: secrets{"tok": "very-secret-token"}, Log: log,
 		Config: app.WorkerConfig{ID: "w1", Concurrency: 1, Poll: 10 * time.Millisecond, Lease: 3 * time.Second, WorkDir: t.TempDir(), MaxLogBytes: 1 << 20, Grace: time.Second},
 	}
 	return e
