@@ -22,10 +22,7 @@ func upstream(t *testing.T, latest string) *Resolver {
 		w.Write([]byte(`{"dist-tags":{"latest":"` + latest + `","next":"0.52.0-rc.1"},"versions":{"0.50.0":{},"0.51.0":{},"0.52.0-rc.1":{}}}`))
 	})
 	mux.HandleFunc("/node/latest-v24.x/SHASUMS256.txt", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("cccc  node-v24.9.0-darwin-arm64.tar.gz\nbbbb  node-v24.9.0-linux-x64.tar.gz\n"))
-	})
-	mux.HandleFunc("/node/v24.9.0/SHASUMS256.txt", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("aaaa  node-v24.9.0-linux-x64.tar.xz\nbbbb  node-v24.9.0-linux-x64.tar.gz\n"))
+		w.Write([]byte("cccc  node-v24.9.0-darwin-arm64.tar.gz\naaaa  node-v24.9.0-linux-x64.tar.xz\nbbbb  node-v24.9.0-linux-x64.tar.gz\n"))
 	})
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
@@ -52,18 +49,11 @@ func TestNPM(t *testing.T) {
 
 func TestNode(t *testing.T) {
 	r := upstream(t, "0.51.0")
-	n, err := r.node(context.Background(), "24", "linux/amd64")
+	n, err := r.node(context.Background(), "linux/amd64")
 	if err != nil || n.Version != "24.9.0" || n.SHA256 != "bbbb" || n.URL != r.NodeDist+"/v24.9.0/node-v24.9.0-linux-x64.tar.gz" {
 		t.Fatalf("%+v %v", n, err)
 	}
-	var se *domain.SpecError
-	if _, err := r.node(context.Background(), "26", "linux/amd64"); !errors.As(err, &se) {
-		t.Fatalf("missing line: %v", err)
-	}
-	if n, err := r.node(context.Background(), "24.9.0", "linux/amd64"); err != nil || n.SHA256 != "bbbb" {
-		t.Fatalf("exact: %+v %v", n, err)
-	}
-	if _, err := r.node(context.Background(), "24.9.0", "linux/arm64"); !errors.As(err, &se) {
-		t.Fatalf("missing build: %v", err)
+	if _, err := r.node(context.Background(), "linux/arm64"); err == nil {
+		t.Fatal("a missing arm64 tarball resolved")
 	}
 }

@@ -73,7 +73,7 @@ func (r *Resolver) Resolve(ctx context.Context, s spec.Spec) (spec.Resolved, err
 	}
 	out.Base = spec.ResolvedImage{Family: s.Base.Family, Version: s.Base.Version, Image: image, Digest: digest}
 
-	if out.Node, err = r.node(ctx, s.Node.Version, s.Platform); err != nil {
+	if out.Node, err = r.node(ctx, s.Platform); err != nil {
 		return out, err
 	}
 	if out.Codex, err = r.npm(ctx, CodexPackage, s.Codex.Version); err != nil {
@@ -199,38 +199,28 @@ func nodeArch(platform string) (string, error) {
 	return "", invalid("platform %s has no Node.js build", platform)
 }
 
-// node locks Node.js: a major line resolves to the version of the official
-// latest-v<major>.x release; the tarball and its sha256 come from that
-// version's SHASUMS256.txt.
-func (r *Resolver) node(ctx context.Context, want, platform string) (spec.ResolvedNode, error) {
+// NodeLine is the Node.js major line images get: the control API and the
+// Codex launcher run on it.
+const NodeLine = "24"
+
+// node locks the newest NodeLine release for the platform: the official
+// latest-v<line>.x checksums name its tarball and sha256.
+func (r *Resolver) node(ctx context.Context, platform string) (spec.ResolvedNode, error) {
 	arch, err := nodeArch(platform)
 	if err != nil {
 		return spec.ResolvedNode{}, err
 	}
-	version := want
-	if !strings.Contains(want, ".") {
-		sums, err := r.get(ctx, fmt.Sprintf("%s/latest-v%s.x/SHASUMS256.txt", r.NodeDist, want), "")
-		if errors.Is(err, errNotFound) {
-			return spec.ResolvedNode{}, invalid("node.version: there is no Node.js %s line", want)
-		}
-		m := nodeVersionRE.FindStringSubmatch(string(sums))
-		if err != nil || m == nil {
-			return spec.ResolvedNode{}, fmt.Errorf("node latest-v%s.x: %v", want, err)
-		}
-		version = m[1]
-	}
-	dist, file := r.NodeDist, "linux-"+arch
-	name := fmt.Sprintf("node-v%s-%s.tar.gz", version, file)
-	sums, err := r.get(ctx, fmt.Sprintf("%s/v%s/SHASUMS256.txt", dist, version), "")
-	if err != nil && !errors.Is(err, errNotFound) {
+	sums, err := r.get(ctx, fmt.Sprintf("%s/latest-v%s.x/SHASUMS256.txt", r.NodeDist, NodeLine), "")
+	if err != nil {
 		return spec.ResolvedNode{}, fmt.Errorf("node checksums: %w", err)
 	}
 	for _, line := range strings.Split(string(sums), "\n") {
-		if f := strings.Fields(line); len(f) == 2 && f[1] == name {
-			return spec.ResolvedNode{Version: version, URL: fmt.Sprintf("%s/v%s/%s", dist, version, name), SHA256: f[0]}, nil
+		f := strings.Fields(line)
+		if m := nodeTarRE.FindStringSubmatch(line); m != nil && len(f) == 2 && m[2] == arch {
+			return spec.ResolvedNode{Version: m[1], URL: fmt.Sprintf("%s/v%s/%s", r.NodeDist, m[1], f[1]), SHA256: f[0]}, nil
 		}
 	}
-	return spec.ResolvedNode{}, invalid("node.version: no Node.js %s build %s", version, name)
+	return spec.ResolvedNode{}, fmt.Errorf("node checksums: no linux-%s tarball", arch)
 }
 
-var nodeVersionRE = regexp.MustCompile(`node-v(\d+\.\d+\.\d+)-`)
+var nodeTarRE = regexp.MustCompile(`node-v(\d+\.\d+\.\d+)-linux-(\w+)\.tar\.gz$`)

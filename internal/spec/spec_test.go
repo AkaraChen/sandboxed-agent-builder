@@ -16,7 +16,7 @@ func TestDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if s.Base.Family != FamilyDebianSlim || s.Base.Version != "trixie" || s.Platform != "linux/amd64" ||
-		s.Node.Version != "24" || s.Codex.Version != Latest || s.Output.Type != OutputLocal {
+		s.Codex.Version != Latest || s.Output.Type != OutputLocal {
 		t.Fatalf("%+v", s)
 	}
 }
@@ -27,7 +27,6 @@ func TestRejections(t *testing.T) {
 		"alpine":         {Base: Base{Family: "alpine"}},
 		"debian release": {Base: Base{Family: FamilyDebian, Version: "jessie"}},
 		"platform":       {Platform: "linux/s390x"},
-		"old node":       {Node: Version{Version: "22"}},
 		"codex range":    {Codex: Version{Version: "^1.0.0"}},
 		"plugin source":  {Plugins: []Plugin{{Source: "git@github.com:x/y", Revision: "main"}}},
 		"plugin path":    {Plugins: []Plugin{{Source: "https://x/y", Revision: "main", Path: "../up"}}},

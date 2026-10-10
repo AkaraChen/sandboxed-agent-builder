@@ -12,7 +12,6 @@ import (
 	"path"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/akarachen/sandboxed-agent-builder/internal/domain"
@@ -47,7 +46,6 @@ type Request struct {
 type Spec struct {
 	Base     Base     `json:"base"`
 	Platform string   `json:"platform,omitempty"`
-	Node     Version  `json:"node"`
 	Codex    Version  `json:"codex"`
 	Plugins  []Plugin `json:"plugins,omitempty"`
 	Scripts  Scripts  `json:"scripts"`
@@ -114,7 +112,6 @@ const (
 
 var (
 	semver     = regexp.MustCompile(`^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$`)
-	nodeLine   = regexp.MustCompile(`^\d+(\.\d+\.\d+)?$`)
 	secretID   = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 	repository = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$`)
 )
@@ -147,14 +144,6 @@ func (s *Spec) Normalize(p Policy) error {
 		add("platform: %q is not built by this builder (%v)", s.Platform, p.Platforms)
 	}
 
-	if s.Node.Version == "" {
-		s.Node.Version = "24"
-	}
-	if !nodeLine.MatchString(s.Node.Version) {
-		add("node.version: %q is not a major line (24) or an exact version", s.Node.Version)
-	} else if major, _ := strconv.Atoi(strings.SplitN(s.Node.Version, ".", 2)[0]); major < 24 {
-		add("node.version: Node.js 24 or later")
-	}
 	if s.Codex.Version == "" {
 		s.Codex.Version = Latest
 	}
