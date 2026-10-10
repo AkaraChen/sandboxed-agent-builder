@@ -119,27 +119,28 @@ type Build struct {
 	Attempts         int
 }
 
-// Attempt is one execution of a build.
+// Attempt is one execution of a build. Its JSON form is the API's; the
+// claim fields stay internal.
 type Attempt struct {
-	ID        string
-	BuildID   string
-	Number    int
-	Status    Status
-	CreatedAt time.Time
-	StartedAt *time.Time
-	EndedAt   *time.Time
+	ID        string     `json:"attemptId"`
+	BuildID   string     `json:"-"`
+	Number    int        `json:"number"`
+	Status    Status     `json:"status"`
+	CreatedAt time.Time  `json:"createdAt"`
+	StartedAt *time.Time `json:"startedAt"`
+	EndedAt   *time.Time `json:"endedAt"`
 	// WorkerID, Generation and LeaseExpiresAt are the current claim. Each
 	// claim increments Generation; writes carrying an older one are stale.
-	WorkerID          string
-	Generation        int64
-	LeaseExpiresAt    *time.Time
-	CancelRequestedAt *time.Time
-	Failure           *Failure
-	Artifact          *Artifact
-	LogsTruncated     bool
+	WorkerID          string     `json:"-"`
+	Generation        int64      `json:"-"`
+	LeaseExpiresAt    *time.Time `json:"-"`
+	CancelRequestedAt *time.Time `json:"cancelRequestedAt"`
+	Failure           *Failure   `json:"failure"`
+	Artifact          *Artifact  `json:"artifact"`
+	LogsTruncated     bool       `json:"logsTruncated"`
 	// Recovered is set when reconciliation, not the worker that ran the
 	// attempt, recorded its outcome.
-	Recovered bool
+	Recovered bool `json:"recovered"`
 }
 
 // Lease is a worker's right to write an attempt's progress.

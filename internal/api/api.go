@@ -187,11 +187,10 @@ func (s *Server) attempts(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	items := make([]attemptJSON, len(list))
-	for i, a := range list {
-		items[i] = attemptView(a)
+	if list == nil {
+		list = []domain.Attempt{}
 	}
-	out := map[string]any{"items": items, "nextCursor": nil}
+	out := map[string]any{"items": list, "nextCursor": nil}
 	if next != "" {
 		out["nextCursor"] = next
 	}
@@ -239,7 +238,7 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
 		// Requested, not yet stopped.
 		status = http.StatusAccepted
 	}
-	writeJSON(w, status, attemptView(a))
+	writeJSON(w, status, a)
 }
 
 func (s *Server) retry(w http.ResponseWriter, r *http.Request) {
@@ -257,7 +256,7 @@ func (s *Server) retry(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusOK
 		w.Header().Set("Idempotent-Replayed", "true")
 	}
-	writeJSON(w, status, attemptView(a))
+	writeJSON(w, status, a)
 }
 
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
@@ -280,28 +279,6 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	}
 }
 
-type attemptJSON struct {
-	AttemptID         string           `json:"attemptId"`
-	Number            int              `json:"number"`
-	Status            domain.Status    `json:"status"`
-	CreatedAt         time.Time        `json:"createdAt"`
-	StartedAt         *time.Time       `json:"startedAt"`
-	EndedAt           *time.Time       `json:"endedAt"`
-	CancelRequestedAt *time.Time       `json:"cancelRequestedAt"`
-	Failure           *domain.Failure  `json:"failure"`
-	Artifact          *domain.Artifact `json:"artifact"`
-	LogsTruncated     bool             `json:"logsTruncated"`
-	Recovered         bool             `json:"recovered"`
-}
-
-func attemptView(a domain.Attempt) attemptJSON {
-	return attemptJSON{
-		AttemptID: a.ID, Number: a.Number, Status: a.Status, CreatedAt: a.CreatedAt, StartedAt: a.StartedAt,
-		EndedAt: a.EndedAt, CancelRequestedAt: a.CancelRequestedAt, Failure: a.Failure, Artifact: a.Artifact,
-		LogsTruncated: a.LogsTruncated, Recovered: a.Recovered,
-	}
-}
-
 func buildView(b domain.Build, a domain.Attempt) map[string]any {
 	var raw struct {
 		Spec json.RawMessage `json:"spec"`
@@ -314,7 +291,7 @@ func buildView(b domain.Build, a domain.Attempt) map[string]any {
 		"specDigest":     b.SpecDigest,
 		"noCache":        b.NoCache,
 		"attempts":       b.Attempts,
-		"currentAttempt": attemptView(a),
+		"currentAttempt": a,
 		"spec":           raw.Spec,
 		"resolvedSpec":   json.RawMessage(b.ResolvedSpec),
 	}
