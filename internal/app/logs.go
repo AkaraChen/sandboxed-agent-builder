@@ -9,15 +9,12 @@ import (
 	"github.com/akarachen/sandboxed-agent-builder/internal/domain"
 )
 
-const (
-	logFlushEvery = 500 * time.Millisecond
-	logBatch      = 200
-	maxLineBytes  = 16 << 10
-)
+const maxLineBytes = 16 << 10
 
-// logSink batches an attempt's log lines into the store under the
-// attempt's lease. Lines still buffered when the process dies are lost;
-// the store marks attempts whose log hit its size limit as truncated.
+// logSink writes an attempt's output into the store under the attempt's
+// lease, one batch per output chunk; a partial last line waits for the rest
+// of its stream. The store marks attempts whose log hit its size limit as
+// truncated.
 type logSink struct {
 	store    Store
 	lease    domain.Lease
@@ -26,90 +23,55 @@ type logSink struct {
 	onErr    func(error)
 
 	mu      sync.Mutex
-	buf     []domain.LogEntry
 	partial map[string]string
-	flushMu sync.Mutex
-	stop    chan struct{}
-	done    chan struct{}
-	once    sync.Once
 }
 
 func newLogSink(store Store, lease domain.Lease, maxBytes int64, redact func(string) string, onErr func(error)) *logSink {
-	s := &logSink{
-		store: store, lease: lease, maxBytes: maxBytes, redact: redact, onErr: onErr,
-		partial: map[string]string{}, stop: make(chan struct{}), done: make(chan struct{}),
-	}
-	go func() {
-		defer close(s.done)
-		t := time.NewTicker(logFlushEvery)
-		defer t.Stop()
-		for {
-			select {
-			case <-s.stop:
-				return
-			case <-t.C:
-				s.flush()
-			}
-		}
-	}()
-	return s
+	return &logSink{store: store, lease: lease, maxBytes: maxBytes, redact: redact, onErr: onErr, partial: map[string]string{}}
 }
 
-// add takes output text, which may hold several lines or end mid-line.
+// add takes output text, which may hold several lines or end mid-line. The
+// builder's own messages are whole lines.
 func (s *logSink) add(stage domain.Stage, stream, text string) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	var lines []string
 	if stream == "builder" {
-		// The builder's own messages are whole lines.
 		lines = strings.Split(strings.TrimSuffix(text, "\n"), "\n")
 	} else {
 		lines = strings.Split(s.partial[stream]+text, "\n")
 		s.partial[stream] = lines[len(lines)-1]
 		lines = lines[:len(lines)-1]
 	}
+	s.write(stage, stream, lines)
+}
+
+func (s *logSink) write(stage domain.Stage, stream string, lines []string) {
+	if len(lines) == 0 {
+		return
+	}
 	now := time.Now().UTC()
-	for _, l := range lines {
+	entries := make([]domain.LogEntry, len(lines))
+	for i, l := range lines {
 		l = strings.TrimRight(l, "\r")
 		if len(l) > maxLineBytes {
 			l = l[:maxLineBytes] + " [line truncated]"
 		}
-		s.buf = append(s.buf, domain.LogEntry{Time: now, Stage: stage, Stream: stream, Text: s.redact(l)})
+		entries[i] = domain.LogEntry{Time: now, Stage: stage, Stream: stream, Text: s.redact(l)}
 	}
-	full := len(s.buf) >= logBatch
-	s.mu.Unlock()
-	if full {
-		go s.flush()
-	}
-}
-
-func (s *logSink) flush() {
-	s.flushMu.Lock()
-	defer s.flushMu.Unlock()
-	s.mu.Lock()
-	batch := s.buf
-	s.buf = nil
-	s.mu.Unlock()
-	if len(batch) == 0 {
-		return
-	}
-	if err := s.store.AppendLogs(context.Background(), s.lease, batch, s.maxBytes); err != nil {
+	if err := s.store.AppendLogs(context.Background(), s.lease, entries, s.maxBytes); err != nil {
 		s.onErr(err)
 	}
 }
 
+// close writes what is left of partial lines.
 func (s *logSink) close() {
-	s.once.Do(func() {
-		close(s.stop)
-		<-s.done
-		s.mu.Lock()
-		now := time.Now().UTC()
-		for stream, rest := range s.partial {
-			if rest != "" {
-				s.buf = append(s.buf, domain.LogEntry{Time: now, Stage: domain.StageBuild, Stream: stream, Text: s.redact(rest)})
-			}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for stream, rest := range s.partial {
+		if rest != "" {
+			s.write(domain.StageBuild, stream, []string{rest})
 		}
-		s.partial = map[string]string{}
-		s.mu.Unlock()
-		s.flush()
-	})
+	}
+	s.partial = map[string]string{}
 }
