@@ -41,7 +41,7 @@ AXP 保存 Agent 环境配置和构建参数，关联 `buildId` 与镜像结果�
 
 - 基础镜像只选官方 Debian slim（默认）和完整 Debian，不提供 Alpine 和 Ubuntu。
 - Agent runtime 只支持 Codex，通过构建时最新稳定版 oar 驱动，记录实际解析版本。
-- 兼容 Agent Plugin 的 hook、MCP 和 skill；hook 的 runtime 适配贡献给 akhook 上游。
+- 插件采用 [Agent Plugins](https://agent-plugins.org) 标准：skill 和 MCP 编译为 Codex 原生配置；hook 通过扩展目录 `app.aghub.akhook/` 交给 akhook 执行。
 - 支持逐项生成 RUN 步骤的 build 脚本，以及打包到镜像、启动时执行的 startup 脚本。
 - 默认交付本地 Docker 镜像；可选内置 Distribution registry，推送确认后交付 `repository@digest`。
 
@@ -52,7 +52,7 @@ AXP 保存 Agent 环境配置和构建参数，关联 `buildId` 与镜像结果�
 - [镜像内的 Agent 控制 API](docs/agent-api.md)
 - [验证记录](docs/verification.md)
 - [抽象消融记录](docs/ablation.md)
-- [示例](examples/README.md)：最小构建、registry 输出、Go + pstack
+- [示例](examples/README.md)：最小构建、registry 输出、Go + GitHub 官方插件
 - [架构与构建生命周期](docs/architecture.md)
 - [设计交付与实现顺序](docs/roadmap.md)
 - [构建参数、产物与插件计划](docs/build-contract.md)

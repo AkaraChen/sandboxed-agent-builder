@@ -58,6 +58,8 @@ output:
 
 ## Agent Plugin 兼容
 
+插件格式采用公开标准 [Agent Plugins](https://agent-plugins.org)（1.0.0/1.1.0）。标准只定义 skill 和 MCP；hook 放在客户端扩展目录 `app.aghub.akhook/` 中，由 akhook 执行。实际映射见[运行契约](runtime-contract.md#插件映射)。
+
 ### skill
 
 安装插件技能内容到 Codex 可发现的位置，保留插件命名空间，明确加载和冲突规则。适配安装位置，不重复将技能正文复制进 prompt。

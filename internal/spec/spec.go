@@ -81,16 +81,12 @@ type Version struct {
 	Version string `json:"version,omitempty"`
 }
 
-// Plugin is an Agent Plugin directory in a git repository.
+// Plugin is an Agent Plugin (https://agent-plugins.org) directory in a
+// git repository.
 type Plugin struct {
 	Source   string `json:"source"`
 	Revision string `json:"revision"`
 	Path     string `json:"path,omitempty"`
-	// Exclude leaves plugin components out of the image: skills,
-	// mcpServers, hooks, agents, commands or rules. Components with no Codex
-	// form (a Cursor plugin's agents, commands, rules and hooks) must be
-	// excluded for the plugin to build.
-	Exclude []string `json:"exclude,omitempty"`
 }
 
 type Scripts struct {
@@ -123,9 +119,6 @@ type Policy struct {
 	// PluginSource reports whether a plugin source URL is allowed.
 	PluginSource func(string) bool
 }
-
-// PluginComponents are the parts of a plugin a build may exclude.
-var PluginComponents = []string{"skills", "mcpServers", "hooks", "agents", "commands", "rules"}
 
 // DebianReleases are the supported Debian codenames, official Docker Hub
 // images.
@@ -224,11 +217,6 @@ func (s *Spec) Normalize(p Policy) error {
 				add("plugins[%d].path: must stay inside the repository", i)
 			}
 			s.Plugins[i].Path = clean
-		}
-		for _, c := range pl.Exclude {
-			if !slices.Contains(PluginComponents, c) {
-				add("plugins[%d].exclude: %q is not one of %v", i, c, PluginComponents)
-			}
 		}
 		key := pl.Source + "#" + pl.Revision + ":" + s.Plugins[i].Path
 		if seen[key] {
@@ -347,18 +335,21 @@ type ResolvedAkhook struct {
 }
 
 type ResolvedPlugin struct {
-	Name       string   `json:"name"`
-	Version    string   `json:"version,omitempty"`
-	Source     string   `json:"source"`
-	Revision   string   `json:"revision"`
-	Commit     string   `json:"commit"`
-	Path       string   `json:"path,omitempty"`
-	Format     string   `json:"format"`
-	Exclude    []string `json:"exclude,omitempty"`
-	MCPServers []string `json:"mcpServers,omitempty"`
-	Skills     []string `json:"skills,omitempty"`
-	Hooks      []string `json:"hooks,omitempty"`
-	Setup      bool     `json:"setup,omitempty"`
+	Name     string `json:"name"`
+	Version  string `json:"version,omitempty"`
+	Source   string `json:"source"`
+	Revision string `json:"revision"`
+	Commit   string `json:"commit"`
+	Path     string `json:"path,omitempty"`
+	// SpecVersion is the Agent Plugins version the plugin declares.
+	SpecVersion string   `json:"specVersion"`
+	MCPServers  []string `json:"mcpServers,omitempty"`
+	Skills      []string `json:"skills,omitempty"`
+	Hooks       []string `json:"hooks,omitempty"`
+	// Warnings report what the plugin had that was ignored or skipped
+	// (unknown manifest fields, invalid skills or servers, unsupported
+	// transports), as the Agent Plugins specification asks clients to.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // Digest identifies r.

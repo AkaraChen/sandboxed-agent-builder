@@ -13,7 +13,7 @@ builder 交付的镜像遵循本契约；镜像 label `io.sandboxed-agent-builde
 ```sh
 docker run --rm \
   -v /secure/codex-auth.json:/run/codex-auth.json:ro -e CODEX_AUTH_JSON_FILE=/run/codex-auth.json \
-  -e PROBE_KEY=... \                 # resolvedSpec.runtimeEnv 中的变量
+  -e MCP_TOKEN_GITHUB_GITHUB=... \     # resolvedSpec.runtimeEnv 中的变量
   -v agent-workspace:/workspace \
   IMAGE run codex "Fix the failing test" --record /workspace/.oar/run.jsonl
 ```
@@ -44,20 +44,28 @@ docker run --rm \
 | --- | --- | --- |
 | `CODEX_AUTH_JSON_FILE` 或 `OPENAI_API_KEY` | 调用方 | Codex 凭据 |
 | `AGENT_API_TOKEN`（或 `AGENT_API_INSECURE=1`） | 调用方 | 控制 API 的 bearer token；其余 `AGENT_API_*` 见 agent-api.md |
-| `resolvedSpec.runtimeEnv` 中的变量 | 调用方 | 插件 MCP 服务器的运行时凭据/参数 |
+| `resolvedSpec.runtimeEnv` 中的变量 | 调用方 | 插件 HTTP MCP 服务器的 bearer token（`MCP_TOKEN_…`） |
 | `CODEX_HOME`、`AKHOOK_ADDITIONAL_CONFIG_PATH` | 镜像 | 不应覆盖 |
 
 ## 插件映射
 
-两种插件格式都支持：Agent Plugin（`plugin.json`，下表）和 Cursor 插件（`.cursor-plugin/plugin.json`）。Cursor 插件的 `skills` 路径（目录或单个 skill）、`mcpServers`（文件路径、内联对象或二者组成的列表，`${CURSOR_PLUGIN_ROOT}` 等同 `${PLUGIN_ROOT}`）按下表编译；需要 OAuth 交互的 MCP 服务器（`auth`）会被拒绝；agents、commands、rules、Cursor hooks 必须通过构建规格的 `exclude` 排除。
+插件按公开标准 [Agent Plugins](https://agent-plugins.org) 读取，支持 1.0.0 与 1.1.0 两个版本（两者规范性内容相同）。处理规则遵循标准：
+- `plugin.json` 违反规范时，拒绝整个插件。
+- 未知字段、无效 skill、无效或不支持的 MCP 条目，跳过并记入 `resolvedSpec.plugins[].warnings`，同时写入构建日志。
 
-| Agent Plugin | 镜像中的原生形式 |
+| 插件内容 | 镜像中的原生形式 |
 | --- | --- |
-| `mcp.json` stdio 服务器 | `[mcp_servers.<plugin>_<server>]`：`command`/`args`/`cwd`/静态 `env`；`${VAR}` 整值透传为 `env_vars`，名称不同时经 `sh -c 'export NAME="$VAR"; exec …'` 改名 |
-| `mcp.json` HTTP 服务器 | `url`，`Authorization: Bearer ${VAR}` → `bearer_token_env_var`，整值 `${VAR}` 头 → `env_http_headers`，其余 → `http_headers` |
-| `skills/<dir>/SKILL.md` | `/etc/codex/skills/<plugin>--<dir>`；同名 skill 跨插件冲突在提交时拒绝 |
-| `akhook.yml` | 规则 ID 加插件前缀，`${PLUGIN_ROOT}` 展开，合并到 `/etc/akhook/plugins.yml` |
-| `setup` | 构建时在插件层执行一次（`PLUGIN_ROOT`、`PLUGIN_CACHE`、`PLUGIN_BIN=/usr/local/bin`，兼容 `AXP_PLUGIN_*`） |
+| 插件目录 | `/opt/agent/plugins/<name>`（`PLUGIN_ROOT`） |
+| 插件数据 | `/var/lib/agent-plugins/<name>`（`PLUGIN_DATA`，属主 `agent`；挂载卷可跨镜像更新保留） |
+| `skills/<name>/SKILL.md`（name 须等于目录名并有 description） | `/etc/codex/skills/<plugin>--<name>`；不同插件出现同名 skill 时，后者跳过并给出警告 |
+| `mcp.json` 的 `stdio` 服务器 | `[mcp_servers.<plugin>_<server>]`：`command`（`./x` 解析为插件内路径）、`args`、`env`、`cwd`（默认插件目录），其中 `${PLUGIN_ROOT}`/`${PLUGIN_DATA}` 在构建时展开，其他 `${…}` 保留原文；`env` 另设 `PLUGIN_ROOT`、`PLUGIN_DATA` |
+| `mcp.json` 的 `streamable-http` 服务器 | `url`、原样的 `http_headers`，以及 `bearer_token_env_var = "MCP_TOKEN_<PLUGIN>_<SERVER>"`（见下） |
+| `mcp.json` 的 `sse` 服务器 | 不支持，跳过并给出警告（标准中为可选） |
+| 扩展目录 `app.aghub.akhook/akhook.yml` | 规则 ID 加插件前缀，展开 `${PLUGIN_ROOT}`/`${PLUGIN_DATA}`，合并到 `/etc/akhook/plugins.yml` |
+
+**认证**：标准把认证交给客户端，`headers` 只能是字面值，不能放密钥。本镜像的做法是：每个 `streamable-http` 服务器从环境变量 `MCP_TOKEN_<插件名>_<服务器名>` 读取 bearer token（全部大写，非字母数字字符换成 `_`），变量名列在 `resolvedSpec.runtimeEnv`。调用方可以在启动容器时注入，也可以在控制 API 打开会话时用 `env` 传入。没有提供 token 时，该服务器连接失败，不影响其他组件。
+
+**扩展目录**：hook 不在标准范围内，因此放在本镜像实现的扩展命名空间 `app.aghub.akhook` 下，由 akhook 执行，语义见下节。其他客户端的扩展目录和 `extensions` 字段一律忽略、不做校验。
 
 MCP 工具在配置中设为 `default_tools_approval_mode = "approve"`：oar 以 `approvalPolicy: never` 驱动 Codex，没有人回答审批请求。
 

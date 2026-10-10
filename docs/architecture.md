@@ -129,7 +129,7 @@ cmd/builder                 composition root：配置、OTel、装配；serve / 
 internal/domain             Build、Attempt、状态与转换、Failure、Artifact、错误
 internal/app                用例（Service）、Worker（含重启核对）、日志写入；端口：Store、Resolver、Executor、Publisher
 internal/spec               请求规格、默认值与校验（Policy）、锁定规格 Resolved、规范化哈希
-internal/plugin             Agent Plugin 读取与校验，编译为 Codex 原生配置与 akhook 规则
+internal/plugin             Agent Plugins 标准（1.0/1.1）读取与校验，编译为 Codex 原生配置与 akhook 规则
 internal/plan               构建上下文与 Dockerfile 生成、镜像入口脚本
 internal/api                chi 路由、认证、错误映射、分页
 internal/adapter/postgres   Store：goose 迁移、SKIP LOCKED 领取、租约代次、日志

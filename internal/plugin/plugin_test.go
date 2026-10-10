@@ -1,8 +1,10 @@
 package plugin
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -12,124 +14,145 @@ func write(t *testing.T, dir string, files map[string]string) {
 	for name, content := range files {
 		path := filepath.Join(dir, name)
 		os.MkdirAll(filepath.Dir(path), 0o755)
-		mode := os.FileMode(0o644)
-		if name == "setup" {
-			mode = 0o755
-		}
-		if err := os.WriteFile(path, []byte(content), mode); err != nil {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-var probe = map[string]string{
-	"plugin.json": `{"name":"probe","version":"1.0.0","description":"d"}`,
-	"mcp.json": `{"mcpServers":{
-		"local":{"command":"node","args":["${PLUGIN_ROOT}/s.mjs"],"env":{"TOKEN":"${PROBE_KEY}","SAME":"${SAME}","MODE":"x"}},
-		"remote":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${REMOTE_KEY}","X-Team":"${TEAM}","X-Static":"v"}}}}`,
-	"skills/one/SKILL.md": "---\nname: probe-one\ndescription: d\n---\nbody\n",
-	"akhook.yml":          "version: 1\nrules:\n  - id: r\n    on: prompt_submit\n    run:\n      argv: [\"${PLUGIN_ROOT}/hook\"]\n",
-	"setup":               "#!/bin/sh\n",
-}
+const (
+	pluginSchema = `"$schema": "https://agent-plugins.org/schemas/1.1.0/plugin.schema.json"`
+	mcpSchema    = `"$schema": "https://agent-plugins.org/schemas/1.1.0/mcp.schema.json"`
+)
 
 func TestReadAndCompile(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "probe")
-	write(t, dir, probe)
-	p, err := Read(dir, nil)
+	write(t, dir, map[string]string{
+		"plugin.json": `{` + pluginSchema + `, "name": "acme.probe", "version": "1.0.0", "author": {"name": "x"}, "targets": ["chat"],
+			"extensions": {"com.example.other": {"anything": [1]}}}`,
+		"mcp.json": `{` + mcpSchema + `, "mcpServers": {
+			"local": {"type": "stdio", "command": "./bin/server", "args": ["--data", "${PLUGIN_DATA}/db", "${HOME}"], "env": {"CONFIG": "${PLUGIN_ROOT}/c.json"}, "cwd": "${PLUGIN_DATA}"},
+			"npx": {"type": "stdio", "command": "npx", "args": ["tool@1.0.0"]},
+			"remote": {"type": "streamable-http", "url": "https://example.com/mcp", "headers": {"X-Tenant": "public"}},
+			"legacy": {"type": "sse", "url": "https://example.com/sse"},
+			"secret-env": {"type": "stdio", "command": "x", "env": {"PLUGIN_ROOT": "/"}},
+			"mixed": {"type": "stdio", "command": "x", "url": "https://example.com"},
+			"plain-http": {"type": "streamable-http", "url": "http://example.com/mcp"},
+			"loopback": {"type": "streamable-http", "url": "http://127.0.0.1:9000/mcp"},
+			"escape": {"type": "stdio", "command": "../bin/server"},
+			"bad-cwd": {"type": "stdio", "command": "x", "cwd": "data"}}}`,
+		"bin/server":                  "#!/bin/sh\n",
+		"skills/one/SKILL.md":         "---\nname: one\ndescription: d\n---\nbody\n",
+		"skills/mismatch/SKILL.md":    "---\nname: other\ndescription: d\n---\n",
+		"skills/no-desc/SKILL.md":     "---\nname: no-desc\n---\n",
+		"skills/notes/README.md":      "not a skill",
+		"app.aghub.akhook/akhook.yml": "version: 1\nrules:\n  - id: r\n    on: prompt_submit\n    run:\n      argv: [\"${PLUGIN_ROOT}/hook\", \"${PLUGIN_DATA}\"]\n",
+	})
+	p, err := Read(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !p.Setup || len(p.Skills) != 1 || p.Skills[0].Name != "probe-one" || strings.Join(p.RuntimeEnv, ",") != "PROBE_KEY,REMOTE_KEY,SAME,TEAM" {
+	if p.Name != "acme.probe" || p.SpecVersion != "1.1.0" || len(p.Skills) != 1 || p.Skills[0].Name != "one" {
 		t.Fatalf("%+v", p)
 	}
+	servers := slices.Sorted(maps.Keys(p.Servers))
+	if strings.Join(servers, ",") != "local,loopback,npx,remote" {
+		t.Fatalf("servers %v", servers)
+	}
+	warnings := strings.Join(p.Warnings, "\n")
+	for _, want := range []string{`unknown field "targets"`, "skills/mismatch: skipped", "skills/no-desc: skipped",
+		"server legacy skipped", "server secret-env skipped", "server mixed skipped", "server plain-http skipped",
+		"server escape skipped", "server bad-cwd skipped"} {
+		if !strings.Contains(warnings, want) {
+			t.Errorf("no warning %q in:\n%s", want, warnings)
+		}
+	}
+	if strings.Contains(warnings, "com.example.other") {
+		t.Error("an unimplemented extension namespace was validated")
+	}
+
 	cfg, err := CodexConfig([]*Plugin{p})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"[mcp_servers.probe_local]", `command = '/bin/sh'`, `export TOKEN="$PROBE_KEY"`, "/opt/agent/plugins/probe/s.mjs",
-		"env_vars = ['PROBE_KEY', 'SAME']", "MODE = 'x'", "default_tools_approval_mode = 'approve'",
-		"[mcp_servers.probe_remote]", "bearer_token_env_var = 'REMOTE_KEY'", "X-Team = 'TEAM'", "X-Static = 'v'",
+		"[mcp_servers.acme_probe_local]", "command = '/opt/agent/plugins/acme.probe/bin/server'",
+		"args = ['--data', '/var/lib/agent-plugins/acme.probe/db', '${HOME}']", "cwd = '/var/lib/agent-plugins/acme.probe'",
+		"CONFIG = '/opt/agent/plugins/acme.probe/c.json'", "PLUGIN_DATA = '/var/lib/agent-plugins/acme.probe'", "PLUGIN_ROOT = '/opt/agent/plugins/acme.probe'",
+		"[mcp_servers.acme_probe_npx]", "command = 'npx'", "cwd = '/opt/agent/plugins/acme.probe'",
+		"[mcp_servers.acme_probe_remote]", "bearer_token_env_var = 'MCP_TOKEN_ACME_PROBE_REMOTE'", "X-Tenant = 'public'",
+		"default_tools_approval_mode = 'approve'",
 	} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("config lacks %q:\n%s", want, cfg)
 		}
 	}
+	if env := RuntimeEnv(p); strings.Join(env, ",") != "MCP_TOKEN_ACME_PROBE_LOOPBACK,MCP_TOKEN_ACME_PROBE_REMOTE" {
+		t.Fatalf("runtime env %v", env)
+	}
 	hooks, err := HooksYAML([]*Plugin{p})
-	if err != nil || !strings.Contains(hooks, "id: probe/r") || !strings.Contains(hooks, "/opt/agent/plugins/probe/hook") {
+	if err != nil || !strings.Contains(hooks, "id: acme.probe/r") || !strings.Contains(hooks, "/opt/agent/plugins/acme.probe/hook") || !strings.Contains(hooks, "/var/lib/agent-plugins/acme.probe") {
 		t.Fatalf("%v\n%s", err, hooks)
 	}
 }
 
-func TestRejections(t *testing.T) {
-	cases := map[string]map[string]string{
-		"runtime var in url":        {"mcp.json": `{"mcpServers":{"s":{"url":"${GATEWAY}/mcp"}}}`},
-		"partial env value":         {"mcp.json": `{"mcpServers":{"s":{"command":"x","env":{"A":"pre-${KEY}"}}}}`},
-		"command and url":           {"mcp.json": `{"mcpServers":{"s":{"command":"x","url":"https://x"}}}`},
-		"claude hooks":              {"hooks/hooks.json": `{}`},
-		"hook event":                {"akhook.yml": "version: 1\nrules:\n  - id: r\n    on: session_start\n"},
-		"skill without frontmatter": {"skills/a/SKILL.md": "no frontmatter"},
-		"bad name":                  {"plugin.json": `{"name":"Bad Name","version":"1","description":"d"}`},
-	}
-	for name, files := range cases {
+func TestManifestRejections(t *testing.T) {
+	for name, manifest := range map[string]string{
+		"no schema":      `{"name": "p"}`,
+		"unknown schema": `{"$schema": "https://agent-plugins.org/schemas/9.0.0/plugin.schema.json", "name": "p"}`,
+		"no name":        `{` + pluginSchema + `}`,
+		"bad name":       `{` + pluginSchema + `, "name": "Bad--Name"}`,
+		"version type":   `{` + pluginSchema + `, "name": "p", "version": 1}`,
+		"author field":   `{` + pluginSchema + `, "name": "p", "author": {"name": "x", "twitter": "y"}}`,
+		"keywords type":  `{` + pluginSchema + `, "name": "p", "keywords": "x"}`,
+		"not an object":  `[]`,
+	} {
 		dir := filepath.Join(t.TempDir(), "p")
-		write(t, dir, map[string]string{"plugin.json": `{"name":"p","version":"1","description":"d"}`})
-		write(t, dir, files)
-		if _, err := Read(dir, nil); err == nil {
+		write(t, dir, map[string]string{"plugin.json": manifest})
+		if _, err := Read(dir); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
 }
 
-func TestCheckSetRejectsSkillClash(t *testing.T) {
-	a := &Plugin{Manifest: Manifest{Name: "a"}, Skills: []Skill{{Dir: "x", Name: "same"}}}
-	b := &Plugin{Manifest: Manifest{Name: "b"}, Skills: []Skill{{Dir: "y", Name: "same"}}}
-	if err := CheckSet([]*Plugin{a, b}); err == nil {
-		t.Fatal("clash accepted")
+func TestMCPDisabledAsAWhole(t *testing.T) {
+	for name, mcp := range map[string]string{
+		"version mismatch": `{"$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json", "mcpServers": {"a": {"type": "stdio", "command": "x"}}}`,
+		"extra field":      `{` + mcpSchema + `, "mcpServers": {}, "other": 1}`,
+		"no servers":       `{` + mcpSchema + `}`,
+	} {
+		dir := filepath.Join(t.TempDir(), "p")
+		write(t, dir, map[string]string{"plugin.json": `{` + pluginSchema + `, "name": "p"}`, "mcp.json": mcp,
+			"skills/s/SKILL.md": "---\nname: s\ndescription: d\n---\n"})
+		p, err := Read(dir)
+		if err != nil || len(p.Servers) != 0 || len(p.Skills) != 1 || !strings.Contains(strings.Join(p.Warnings, ""), "MCP disabled") {
+			t.Errorf("%s: %+v %v", name, p, err)
+		}
 	}
 }
 
-func TestCursorPlugin(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "kit")
-	write(t, dir, map[string]string{
-		".cursor-plugin/plugin.json": `{"name":"kit","displayName":"Kit","version":"1.2.0","description":"d","author":{"name":"x"},
-			"skills":["./skills/","./extra/solo"],"agents":"./agents/",
-			"mcpServers":{"docs":{"type":"http","url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${DOCS_TOKEN}"}},
-			              "local":{"command":"node","args":["${CURSOR_PLUGIN_ROOT}/s.mjs"]}}}`,
-		"skills/one/SKILL.md": "---\nname: kit-one\ndescription: d\n---\n",
-		"skills/two/SKILL.md": "---\nname: kit-two\ndescription: d\n---\n",
-		"extra/solo/SKILL.md": "---\nname: kit-solo\ndescription: d\n---\n",
-		"agents/helper.md":    "---\nname: helper\n---\n",
-	})
-	if _, err := Read(dir, nil); err == nil || !strings.Contains(err.Error(), `add "agents" to the plugin's exclude`) {
-		t.Fatalf("agents without exclude: %v", err)
-	}
-	p, err := Read(dir, []string{"agents"})
-	if err != nil {
+func TestPathsStayInsideThePlugin(t *testing.T) {
+	outside := t.TempDir()
+	write(t, outside, map[string]string{"SKILL.md": "---\nname: leak\ndescription: d\n---\n"})
+	dir := filepath.Join(t.TempDir(), "p")
+	write(t, dir, map[string]string{"plugin.json": `{` + pluginSchema + `, "name": "p"}`})
+	os.MkdirAll(filepath.Join(dir, "skills"), 0o755)
+	if err := os.Symlink(outside, filepath.Join(dir, "skills", "leak")); err != nil {
 		t.Fatal(err)
 	}
-	var paths []string
-	for _, s := range p.Skills {
-		paths = append(paths, s.Path+"="+s.Name)
+	p, err := Read(dir)
+	if err != nil || len(p.Skills) != 0 {
+		t.Fatalf("a skill outside the plugin was read: %+v %v", p, err)
 	}
-	if p.Format != "cursor" || strings.Join(paths, ",") != "skills/one=kit-one,skills/two=kit-two,extra/solo=kit-solo" || strings.Join(p.RuntimeEnv, ",") != "DOCS_TOKEN" {
-		t.Fatalf("%+v %v", p, paths)
-	}
-	cfg, err := CodexConfig([]*Plugin{p})
-	if err != nil || !strings.Contains(cfg, "/opt/agent/plugins/kit/s.mjs") || !strings.Contains(cfg, "bearer_token_env_var = 'DOCS_TOKEN'") {
-		t.Fatalf("%v\n%s", err, cfg)
-	}
-	if p, err := Read(dir, []string{"agents", "skills", "mcpServers"}); err != nil || len(p.Skills) != 0 || len(p.Servers) != 0 {
-		t.Fatalf("excluded: %+v %v", p, err)
-	}
+}
 
-	write(t, dir, map[string]string{".cursor-plugin/plugin.json": `{"name":"kit","version":"1","mcpServers":"./mcp.json"}`,
-		"mcp.json": `{"mcpServers":{"crm":{"type":"http","url":"https://crm.example/mcp","auth":{"CLIENT_ID":"${CLIENT_ID}"}}}}`})
-	if _, err := Read(dir, []string{"agents"}); err == nil || !strings.Contains(err.Error(), "OAuth") {
-		t.Fatalf("oauth server: %v", err)
+func TestCheckSetSkipsSkillClash(t *testing.T) {
+	a := &Plugin{Name: "a", Skills: []Skill{{Dir: "same", Name: "same"}}}
+	b := &Plugin{Name: "b", Skills: []Skill{{Dir: "same", Name: "same"}}}
+	if err := CheckSet([]*Plugin{a, b}); err != nil || len(b.Skills) != 0 || len(b.Warnings) != 1 {
+		t.Fatalf("%v %+v", err, b)
 	}
-	write(t, dir, map[string]string{".cursor-plugin/plugin.json": `{"name":"kit","version":"1","skills":"../outside"}`})
-	if _, err := Read(dir, []string{"agents"}); err == nil {
-		t.Fatal("skills path outside the plugin accepted")
+	if err := CheckSet([]*Plugin{a, {Name: "a"}}); err == nil {
+		t.Fatal("duplicate plugin names accepted")
 	}
 }

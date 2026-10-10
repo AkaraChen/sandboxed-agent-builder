@@ -20,6 +20,8 @@ go test -race -tags docker ./internal/adapter/docker   # 需要 Docker socket
 
 ## 真实构建与运行
 
+下表中插件相关的几行是插件改为 Agent Plugins 标准之前的记录（当时 probe 用运行时变量 `PROBE_KEY`、带 `setup`）。标准格式下的结果见下方“插件标准”一节。
+
 | 场景 | 结果 |
 | --- | --- |
 | Debian slim 基础构建（apt 脚本 + 使用 secret 的脚本 + startup） | 冷构建 2 分 13 秒（含编译 akhook），镜像 332 MB；日志中 secret 值为 `[redacted]`；镜像内无 `/run/secrets`；当时的默认命令（`installation codex`，现已改为 `serve`）先执行 startup 再报告 codex-cli 0.162.1 |
@@ -40,7 +42,7 @@ go test -race -tags docker ./internal/adapter/docker   # 需要 Docker socket
 scripts/smoke-image.sh IMAGE ~/.codex/auth.json ./evidence
 ```
 
-镜像需用 `testdata/plugins/probe` 构建（`plugins: [{"source": "<含该目录的 git 仓库>", "revision": "...", "path": "testdata/plugins/probe"}]`），运行时提供 `PROBE_KEY=k123`。
+镜像需用 `testdata/plugins/probe`（Agent Plugins 1.1.0）构建：`plugins: [{"source": "<含该目录的 git 仓库>", "revision": "...", "path": "testdata/plugins/probe"}]`。期望输出 `MCP=MAGIC-data-ok-static-ok SKILL=KUMQUAT-7 HOOK=ZEBRA-42 TOUCH=blocked`。
 
 ## Agent 控制 API（镜像内 Hono 服务）
 
@@ -60,15 +62,24 @@ scripts/smoke-image.sh IMAGE ~/.codex/auth.json ./evidence
 - 构建在实例 1 上运行时 `kill -9` 实例 1：实例 2 在租约过期后接管（generation 1 → 2），记为 `interrupted`、`recovered: true`。
 - registry 模式：推送并核对 digest，库里 `artifact->>'registryRef'` 与 API 返回一致；删除本地镜像后按 digest 拉取成功。
 
-## 示例：Go + pstack
+## 插件标准（Agent Plugins 1.0/1.1）
 
-用 `examples/go-pstack/build.json` 在 PostgreSQL 上的 builder 里真实构建，再用 `examples/go-pstack/run.sh` 驱动：
+- **单元测试**：
+  - 清单规则：`$schema`、名称、author 字段封闭；未知字段只告警。
+  - skill 规则：name 须等于目录名并有 description，否则跳过。
+  - MCP 规则：stdio/streamable-http 封闭字段；`sse`、混用字段、非 loopback 的 http、越界的 `./` 命令、非法 `cwd`、`env` 设置 `PLUGIN_ROOT` 都会被跳过；`mcp.json` 与 `plugin.json` 版本不一致时整体停用 MCP，但 skill 照常读取。
+  - 通过符号链接指向插件目录外的 skill 不会被读取；其他客户端的 `extensions` 不做校验。
+- **probe 插件实测**：`testdata/plugins/probe` 改为标准格式（1.1.0，hook 在 `app.aghub.akhook/`）后真实构建。镜像中 MCP 服务器的 `env` 含 `PLUGIN_ROOT`/`PLUGIN_DATA`，`/var/lib/agent-plugins/probe` 属主为 `agent`。`scripts/smoke-image.sh` 全部通过：`MCP=MAGIC-data-ok-static-ok`（`PLUGIN_DATA` 可写）、skill、两个生命周期 hook、`PreToolUse` 拦截。
 
-- **解析**：pstack 锁定到 `cursor/plugins@d73344be`，格式 `cursor`，51 个 skill；`exclude: ["agents"]`。不写 `exclude` 时，提交会被拒绝并提示原因（单元测试与真实插件均验证）。
-- **第 1 次尝试失败**：导出镜像时 containerd 报 `ref … locked … unavailable`，记为 `build_failed`。这台机器上同时运行着约 30 个容器，属于 daemon 侧的瞬时冲突。
-- **第 2 次尝试成功**：经 `retry` 创建 attempt 2，成功，第 1 次的失败与日志都保留。镜像约 502 MB，内有 Go 1.27.2、gopls v0.23.0，`/etc/codex/skills` 下 51 个 pstack skill。
-- **驱动 Codex**：容器里没有 Codex 登录。经控制 API 打开会话，`provider` 指向 OOMOL 的 OpenAI 兼容服务（Responses API），模型 `gpt-6-astra`。Codex 说明会使用 pstack 的 `tdd` 和 `unslop` skill，先写出失败的表驱动测试（`undefined: Reverse`），再实现按 rune 反转，`go test -race ./...` 通过。容器内 `/workspace` 有 `go.mod`、`reverse.go`、`reverse_test.go`，复跑 `go test` 通过。
-- **key 未泄漏**：API key 在整个运行日志中出现 0 次。
+## 示例：Go + GitHub
+
+用 `examples/go-github/build.json` 在 PostgreSQL 上的 builder 里真实构建，再用 `examples/go-github/run.sh` 驱动：
+
+- **解析**：GitHub 插件锁定为 `github/github-mcp-server@eb47a99d`（`agent-plugin/`，`specVersion` 为 1.0.0，没有警告），`mcpServers: ["github_github"]`，`runtimeEnv: ["MCP_TOKEN_GITHUB_GITHUB"]`。
+- **构建**：一次成功。
+- **驱动 Codex**：容器内没有 Codex 登录。打开会话时，`provider` 指向 OOMOL 的 OpenAI 兼容服务（模型 `gpt-6-astra`），`env` 中带上本机 `gh auth token`。
+- **结果**：Codex 通过 GitHub MCP 查到 `github/github-mcp-server` 的最新 release 是 `v2.0.2`。经 `gh api` 核对，该版本于 2026-10-08 发布，与查询结果一致，这个信息不可能来自模型的训练数据。Codex 随后写出 `release.go` 与测试，`go test -race ./...` 通过，在容器里复跑也通过。
+- **凭据未泄漏**：模型服务的 key 和 GitHub token 在整个运行日志中都出现 0 次。
 
 ## Alpine（已移除）
 

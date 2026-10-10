@@ -1,1 +1,6 @@
-{"name":"probe","version":"1.0.0","description":"Verification plugin: an MCP tool, a skill, akhook hooks and a setup script."}
+{
+  "$schema": "https://agent-plugins.org/schemas/1.1.0/plugin.schema.json",
+  "name": "probe",
+  "version": "2.0.0",
+  "description": "Verification plugin: an MCP tool, a skill and akhook hooks."
+}

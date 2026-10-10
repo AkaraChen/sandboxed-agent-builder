@@ -18,7 +18,7 @@ func TestWrite(t *testing.T) {
 	repo := t.TempDir()
 	pdir := filepath.Join(repo, "plugins", "probe")
 	os.MkdirAll(filepath.Join(pdir, "skills", "one"), 0o755)
-	os.WriteFile(filepath.Join(pdir, "plugin.json"), []byte(`{"name":"probe","version":"1","description":"d"}`), 0o644)
+	os.WriteFile(filepath.Join(pdir, "plugin.json"), []byte(`{"$schema":"https://agent-plugins.org/schemas/1.1.0/plugin.schema.json","name":"probe","version":"1"}`), 0o644)
 	os.WriteFile(filepath.Join(pdir, "skills", "one", "SKILL.md"), []byte("---\nname: one\ndescription: d\n---\n"), 0o644)
 
 	r := spec.Resolved{
@@ -52,6 +52,7 @@ func TestWrite(t *testing.T) {
 	}
 	for _, want := range []string{"FROM docker.io/library/debian:trixie-slim@sha256:base", "@openai/codex@1.2.3", "@botiverse/oar-cli@0.51.0",
 		"ADD --checksum=sha256:abc", "COPY plugins/probe /opt/agent/plugins/probe", "COPY plugins/probe/skills/one /etc/codex/skills/probe--one",
+		"RUN mkdir -p /var/lib/agent-plugins/probe && chown agent:agent /var/lib/agent-plugins/probe",
 		`ENTRYPOINT ["/usr/local/bin/agent-entrypoint"]`, "USER agent",
 		"COPY agent-server /opt/agent/server", "@botiverse/oar-cli/node_modules/@botiverse/oar", `CMD ["serve"]`, "EXPOSE 8080"} {
 		if !strings.Contains(df, want) {

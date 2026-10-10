@@ -12,8 +12,11 @@ import (
 
 // Paths inside the image (runtime contract 1).
 const (
-	// ImageRoot holds each plugin at ImageRoot/<name>.
+	// ImageRoot holds each plugin at ImageRoot/<name> (PLUGIN_ROOT).
 	ImageRoot = "/opt/agent/plugins"
+	// DataRoot holds each plugin's writable PLUGIN_DATA directory; mount a
+	// volume here to keep it across image updates.
+	DataRoot = "/var/lib/agent-plugins"
 	// CodexSystemDir is Codex's system configuration: config.toml,
 	// requirements.toml (managed hooks) and skills.
 	CodexSystemDir = "/etc/codex"
@@ -62,7 +65,7 @@ func CodexConfig(list []*Plugin) (string, error) {
 			if _, dup := servers[id]; dup {
 				return "", fmt.Errorf("MCP server id %s is used twice", id)
 			}
-			servers[id] = codexServer(p.Servers[n], ImageRoot+"/"+p.Name)
+			servers[id] = codexServer(p, n, p.Servers[n])
 		}
 	}
 	var b strings.Builder
@@ -78,88 +81,71 @@ func CodexConfig(list []*Plugin) (string, error) {
 	return b.String(), nil
 }
 
-func expandRoot(s, root string) string { return strings.ReplaceAll(s, "${"+Root+"}", root) }
+// expand replaces the specification's placeholders with the plugin's
+// directories in the image.
+func expand(s, root, data string) string {
+	return strings.NewReplacer(Root, root, Data, data).Replace(s)
+}
 
-// codexServer is s in Codex's mcp_servers table. Runtime variables become
-// Codex's pass-through settings; Codex passes variables on but does not
-// rename them, so an env entry whose name differs from its variable goes
-// through a sh wrapper.
-func codexServer(s Server, root string) map[string]any {
-	out := map[string]any{"default_tools_approval_mode": "approve"}
-	if s.URL != "" {
-		out["url"] = expandRoot(s.URL, root)
-		static, fromEnv := map[string]string{}, map[string]string{}
-		for k, v := range s.Headers {
-			if m := bearerRE.FindStringSubmatch(v); m != nil && strings.EqualFold(k, "Authorization") && m[1] != Root {
-				out["bearer_token_env_var"] = m[1]
-			} else if m := wholeVarRE.FindStringSubmatch(v); m != nil && m[1] != Root {
-				fromEnv[k] = m[1]
-			} else {
-				static[k] = expandRoot(v, root)
-			}
-		}
-		if len(static) > 0 {
-			out["http_headers"] = static
-		}
-		if len(fromEnv) > 0 {
-			out["env_http_headers"] = fromEnv
-		}
-		return out
-	}
-	command := expandRoot(s.Command, root)
-	args := make([]string, len(s.Args))
-	for i, a := range s.Args {
-		args[i] = expandRoot(a, root)
-	}
-	static := map[string]string{}
-	var pass []string
-	var renames []string
-	keys := make([]string, 0, len(s.Env))
-	for k := range s.Env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		v := s.Env[k]
-		m := wholeVarRE.FindStringSubmatch(v)
-		switch {
-		case m != nil && m[1] != Root:
-			pass = append(pass, m[1])
-			if m[1] != k {
-				renames = append(renames, fmt.Sprintf(`export %s="$%s"; `, k, m[1]))
-			}
-		default:
-			static[k] = expandRoot(v, root)
+var tokenEnvRE = regexp.MustCompile(`[^A-Z0-9_]`)
+
+// TokenEnv is the environment variable holding the bearer token for a
+// plugin's streamable-http server. Agent Plugins leaves authorization to
+// the client; this image's way is a token the caller supplies at run time.
+func TokenEnv(plugin, server string) string {
+	return "MCP_TOKEN_" + tokenEnvRE.ReplaceAllString(strings.ToUpper(plugin+"_"+server), "_")
+}
+
+// RuntimeEnv lists the variables a plugin reads at run time.
+func RuntimeEnv(p *Plugin) []string {
+	var out []string
+	for name, s := range p.Servers {
+		if s.Type == "streamable-http" {
+			out = append(out, TokenEnv(p.Name, name))
 		}
 	}
-	if len(renames) > 0 {
-		args = append([]string{"-c", strings.Join(renames, "") + `exec "$0" "$@"`, command}, args...)
-		command = "/bin/sh"
-	}
-	out["command"] = command
-	if len(args) > 0 {
-		out["args"] = args
-	}
-	if s.Cwd != "" {
-		out["cwd"] = expandRoot(s.Cwd, root)
-	}
-	if len(static) > 0 {
-		out["env"] = static
-	}
-	if len(pass) > 0 {
-		sort.Strings(pass)
-		out["env_vars"] = dedupe(pass)
-	}
+	sort.Strings(out)
 	return out
 }
 
-func dedupe(sorted []string) []string {
-	out := sorted[:0]
-	for i, s := range sorted {
-		if i == 0 || s != sorted[i-1] {
-			out = append(out, s)
+// codexServer is a server of plugin p in Codex's mcp_servers table.
+func codexServer(p *Plugin, name string, s Server) map[string]any {
+	root, data := ImageRoot+"/"+p.Name, DataRoot+"/"+p.Name
+	out := map[string]any{"default_tools_approval_mode": "approve"}
+	if s.Type == "streamable-http" {
+		out["url"] = s.URL
+		out["bearer_token_env_var"] = TokenEnv(p.Name, name)
+		if len(s.Headers) > 0 {
+			out["http_headers"] = s.Headers
 		}
+		return out
 	}
+	command := s.Command
+	if rel, ok := strings.CutPrefix(command, "./"); ok {
+		command = root + "/" + rel
+	}
+	out["command"] = command
+	if len(s.Args) > 0 {
+		args := make([]string, len(s.Args))
+		for i, a := range s.Args {
+			args[i] = expand(a, root, data)
+		}
+		out["args"] = args
+	}
+	cwd := root
+	switch {
+	case strings.HasPrefix(s.Cwd, "./"):
+		cwd = root + "/" + s.Cwd[2:]
+	case s.Cwd != "":
+		cwd = expand(s.Cwd, root, data)
+	}
+	out["cwd"] = cwd
+	env := map[string]string{}
+	for k, v := range s.Env {
+		env[k] = expand(v, root, data)
+	}
+	env["PLUGIN_ROOT"], env["PLUGIN_DATA"] = root, data
+	out["env"] = env
 	return out
 }
 
@@ -199,7 +185,7 @@ func HooksYAML(list []*Plugin) (string, error) {
 	for _, p := range list {
 		root := ImageRoot + "/" + p.Name
 		for _, r := range p.Hooks {
-			rule := expandAny(r, root).(map[string]any)
+			rule := expandAny(r, root, DataRoot+"/"+p.Name).(map[string]any)
 			rule["id"] = p.Name + "/" + rule["id"].(string)
 			rules = append(rules, rule)
 		}
@@ -211,20 +197,20 @@ func HooksYAML(list []*Plugin) (string, error) {
 	return "# Generated by sandboxed-agent-builder: the plugins' akhook rules.\n" + string(out), nil
 }
 
-func expandAny(v any, root string) any {
+func expandAny(v any, root, data string) any {
 	switch t := v.(type) {
 	case string:
-		return expandRoot(t, root)
+		return expand(t, root, data)
 	case []any:
 		out := make([]any, len(t))
 		for i, x := range t {
-			out[i] = expandAny(x, root)
+			out[i] = expandAny(x, root, data)
 		}
 		return out
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, x := range t {
-			out[k] = expandAny(x, root)
+			out[k] = expandAny(x, root, data)
 		}
 		return out
 	}

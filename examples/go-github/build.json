@@ -12,12 +12,9 @@
     },
     "plugins": [
       {
-        "source": "https://github.com/cursor/plugins",
-        "revision": "d73344bee8cf22e53b9d5f4cf5749d38ba38c174",
-        "path": "pstack",
-        "exclude": [
-          "agents"
-        ]
+        "source": "https://github.com/github/github-mcp-server",
+        "revision": "eb47a99ddb866ca2b8a162920e6bda9521f33ebb",
+        "path": "agent-plugin"
       }
     ],
     "scripts": {

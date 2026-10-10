@@ -10,7 +10,7 @@
 docker run -d -p 8080:8080 \
   -v /secure/codex-auth.json:/run/codex-auth.json:ro -e CODEX_AUTH_JSON_FILE=/run/codex-auth.json \
   -e AGENT_API_TOKEN="$(openssl rand -hex 32)" \
-  -e PROBE_KEY=...                       # resolvedSpec.runtimeEnv 里的变量
+  -e MCP_TOKEN_GITHUB_GITHUB=...         # resolvedSpec.runtimeEnv 里的变量（也可在打开会话时用 env 传入）
   -v agent-workspace:/workspace \
   IMAGE
 ```

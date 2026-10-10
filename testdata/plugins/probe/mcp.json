@@ -1,1 +1,11 @@
-{"mcpServers":{"probe":{"command":"node","args":["${PLUGIN_ROOT}/server.mjs"],"env":{"PROBE_TOKEN":"${PROBE_KEY}","PROBE_MODE":"static-ok"}}}}
+{
+  "$schema": "https://agent-plugins.org/schemas/1.1.0/mcp.schema.json",
+  "mcpServers": {
+    "probe": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/server.mjs"],
+      "env": { "PROBE_MODE": "static-ok", "PROBE_STATE": "${PLUGIN_DATA}/state.txt" }
+    }
+  }
+}

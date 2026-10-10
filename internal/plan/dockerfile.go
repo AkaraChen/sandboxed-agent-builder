@@ -109,13 +109,9 @@ func dockerfile(r spec.Resolved, plugins []*plugin.Plugin) (string, []string) {
 		root := plugin.ImageRoot + "/" + p.Name
 		w("# Plugin %s %s.", p.Name, p.Version)
 		w("COPY plugins/%s %s", p.Name, root)
-		if p.Setup {
-			w("RUN --mount=type=cache,id=sab-plugin-%s,target=/var/cache/agent-plugins/%s \\", p.Name, p.Name)
-			w("    cd %s && PLUGIN_ROOT=%s PLUGIN_CACHE=/var/cache/agent-plugins/%s PLUGIN_BIN=/usr/local/bin \\", root, root, p.Name)
-			w("    AXP_PLUGIN_CACHE=/var/cache/agent-plugins/%s AXP_PLUGIN_BIN=/usr/local/bin ./setup", p.Name)
-		}
+		w("RUN mkdir -p %s/%s && chown agent:agent %s/%s", plugin.DataRoot, p.Name, plugin.DataRoot, p.Name)
 		for _, s := range p.Skills {
-			w("COPY plugins/%s/%s %s", p.Name, s.Path, plugin.SkillDest(p.Name, s))
+			w("COPY plugins/%s/skills/%s %s", p.Name, s.Dir, plugin.SkillDest(p.Name, s))
 		}
 		w("")
 	}

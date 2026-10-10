@@ -57,3 +57,12 @@
 ## 后续：移除 Alpine
 
 按评审意见移除 Alpine 基础镜像：规格只接受 `debian-slim` 与 `debian`；去掉 `alpineVerified` 配置、musl 版 Node.js 解析与 Dockerfile 的 apk 分支。生产代码从 3849 行变为 3817 行（−32）。
+
+## 后续：插件改为 Agent Plugins 标准
+
+按评审意见，不再支持 Cursor 插件，插件格式改为公开标准 Agent Plugins 1.0/1.1。随之移除的非标准部分：
+- Cursor 插件读取器与 `exclude` 字段；
+- 插件 `setup` 脚本；
+- MCP 中的运行时变量改名包装（标准只展开 `${PLUGIN_ROOT}`/`${PLUGIN_DATA}`，认证交给客户端，因此改为 `MCP_TOKEN_*` 的 bearer token）。
+
+生产代码从 4063 行变为 3996 行。

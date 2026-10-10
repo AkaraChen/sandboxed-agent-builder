@@ -53,7 +53,7 @@ func Write(r spec.Resolved, fetch Fetcher, dir string) (*Plan, error) {
 			return nil, fmt.Errorf("plugin %s: %w", rp.Name, err)
 		}
 		src := filepath.Join(repo, filepath.FromSlash(rp.Path))
-		p, err := plugin.Read(src, rp.Exclude)
+		p, err := plugin.Read(src)
 		if err != nil {
 			return nil, err
 		}

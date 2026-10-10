@@ -55,11 +55,9 @@
 - `node.version`：主版本线（`24`，取该线最新版本）或精确版本，至少 24（oar 的要求）。
 - `agent`：Agent runtime。`type` 目前只能是 `codex`（默认），其配置放在与类型同名的字段里：`agent.codex.version` 为 `latest` 或精确版本。这样以后增加 runtime 时只新增类型和对应字段，现有请求不变；与 `type` 不符的配置或未知类型会被拒绝。
 - `oar.version`：`latest-stable` 或精确版本。oar 是驱动所有 runtime 的入口，独立于 `agent`。
-- `plugins[]`：插件所在 git 仓库（默认只允许 `https://`）、`revision`（提交、tag 或分支，提交时锁定为提交）、仓库内 `path`，以及可选的 `exclude`。支持两种插件格式：
-  - **Agent Plugin**：根目录有 `plugin.json`，即 AXP 的格式。
-  - **Cursor 插件**：有 `.cursor-plugin/plugin.json`，例如 `cursor/plugins` 仓库里的插件。
-
-  两种格式里的 skill 和 MCP 服务器都会编译为 Codex 原生配置。Cursor 插件的 agents、commands、rules 和 Cursor hooks 在 Codex 中没有对应物，必须在 `exclude` 中列出才能构建，否则提交时会被拒绝并给出原因。`exclude` 的取值为 `skills`、`mcpServers`、`hooks`、`agents`、`commands`、`rules`。
+- `plugins[]`：插件所在 git 仓库（默认只允许 `https://`）、`revision`（提交、tag 或分支，提交时锁定为提交），以及仓库内的 `path`。插件须符合 [Agent Plugins](https://agent-plugins.org) 1.0.0 或 1.1.0 标准，映射规则见[运行契约](runtime-contract.md#插件映射)。
+  - `plugin.json` 不合规时，提交返回 400。
+  - 无效的 skill 或 MCP 条目会被跳过，并在 `resolvedSpec.plugins[].warnings` 中说明。
 - `scripts.build[]`：按顺序每项一个 `RUN`，以 `/bin/sh -e` 执行；`secrets` 引用运维配置的 build secret，挂载在 `/run/secrets/<id>`，仅该步可见。
 - `scripts.startup[]`：打包进镜像，容器每次启动时由入口按顺序执行，构建时不执行，不能引用 build secret。
 - `output`：`{"type":"local"}`（默认）或 `{"type":"registry","repository":"agents/demo"}`（需启用内置 registry）。
@@ -107,7 +105,7 @@
 
 `artifact.imageId` 与 `daemonRef` 只在本 builder 的 Docker daemon 中有效；registry 字段只有在推送完成且 registry 中确认了 manifest digest 后才出现。使用 containerd 镜像存储的 daemon 中 image ID 恰好等于 manifest digest，但两者语义不同，调用方跨机器只能用 `registryRef`。
 
-`resolvedSpec.runtimeEnv` 列出插件运行时读取的环境变量，调用方启动容器时提供。
+`resolvedSpec.runtimeEnv` 列出镜像运行时读取的环境变量，目前是插件 HTTP MCP 服务器的 bearer token（`MCP_TOKEN_<PLUGIN>_<SERVER>`），由调用方在启动容器或打开会话时提供。
 
 ## GET /builds/{id}
 

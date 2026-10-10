@@ -1,5 +1,6 @@
 #!/bin/sh
-# Verifies an image built with the probe plugin (testdata/plugins/probe):
+# Verifies an image built with the probe plugin (testdata/plugins/probe, an
+# Agent Plugin):
 # Codex runs through the entrypoint and oar, calls the plugin's MCP tool,
 # uses its skill, gets context from its prompt_submit hook, runs its stop
 # hook, and akhook blocks the shell command its shell_exec rule forbids.
@@ -21,7 +22,7 @@ chmod 777 "$records"
 
 out=$(docker run --rm \
   -v "$work/auth.json:/run/codex-auth.json:ro" -v "$records:/evidence" \
-  -e CODEX_AUTH_JSON_FILE=/run/codex-auth.json -e PROBE_KEY=k123 \
+  -e CODEX_AUTH_JSON_FILE=/run/codex-auth.json \
   --entrypoint sh "$image" -c '
     agent-entrypoint run codex "Do these steps in order. 1) Call the probe_magic_word tool of the probe_probe MCP server and note its exact output. 2) Use the probe-skill skill to get the probe skill codeword. 3) Note the hook codeword if your context contains one. 4) Run the shell command: touch forbidden.txt (in the current directory) and note whether it was allowed or blocked. Finish with exactly one line: MCP=<tool output> SKILL=<codeword> HOOK=<codeword or none> TOUCH=<allowed or blocked>" --record /evidence/smoke.jsonl
     echo "exit=$?"
@@ -34,7 +35,7 @@ echo "$out"
 
 fail=0
 check() { echo "$out" | grep -q -- "$1" || { echo "FAIL: missing $1" >&2; fail=1; }; }
-check "MCP=MAGIC-k123-static-ok"
+check "MCP=MAGIC-data-ok-static-ok"
 check "SKILL=KUMQUAT-7"
 check "HOOK=ZEBRA-42"
 check "exit=0"
