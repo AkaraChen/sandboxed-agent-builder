@@ -54,6 +54,8 @@ flowchart TD
 
 规格包含基础镜像、runtime/oar 版本、插件来源与版本、用户构建脚本、目标平台，以及可选输出方式。调用方的模型和指令只有在影响镜像内容时才作为构建输入。
 
+具体产品选择和字段计划见 [构建契约](build-contract.md)：只支持 Codex；基础镜像为官方 Alpine/Debian slim/完整 Debian；oar 新构建采用最新稳定版并锁定；build/startup 脚本分别定义。hook 兼容贡献到 akhook 上游。
+
 基础系统与运行入口/oar → runtime → 按稳定顺序排列的插件安装步骤 → 用户构建脚本。
 
 每个插件组织独立 layer，利用 BuildKit 缓存；前面的 layer 改动会使后续缓存失效。相同输入和平台可以复用缓存或已有产物，但强制重建的语义需明确。
@@ -85,6 +87,8 @@ API 客户端断开不会取消已持久化的构建。worker 与 Docker 连接�
 本地模式返回 `imageId`、目标平台和 daemon 引用。该 ID 对应的镜像必须存在于指定 Docker daemon，调用方在同一个 daemon 上运行它。
 
 跨机器运行需要显式配置 registry 输出，构建成功包含推送成功，返回 `repository@sha256:…`。本地 image ID 与 registry manifest digest 不可混用。无 registry 时不承诺镜像可跨机器使用。
+
+规划可选内置 Distribution registry，提供持久化单节点镜像分发；默认输出仍为本地镜像。registry 不自动暴露 daemon 镜像，产物需推送发布，网络地址与存储单独配置。
 
 镜像仍在 Docker/registry 中；调用方保存产物引用。产物可能被外部清理，需定义可用性检查和清理协调；builder 不能自动删除仍被调用方使用的镜像。
 

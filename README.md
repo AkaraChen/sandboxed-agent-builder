@@ -19,10 +19,19 @@ AXP 保存 Agent 环境配置和构建参数，关联 `buildId` 与镜像结果�
 
 服务由 API、构建 worker、数据库和 Docker 执行适配组成。oar 安装在产物镜像中，由调用方运行；builder 不运行 Agent。
 
+## 产品选择
+
+- 基础镜像只选官方 Alpine、Debian slim 和完整 Debian；默认 Debian slim，Alpine 经过兼容性验证后开放。不使用 Ubuntu。
+- Agent runtime 只支持 Codex，通过构建时最新稳定版 oar 驱动，记录实际解析版本。
+- 兼容 Agent Plugin 的 hook、MCP 和 skill；hook 的 runtime 适配贡献给 akhook 上游。
+- 支持逐项生成 RUN 步骤的 build 脚本，以及打包到镜像、启动时执行的 startup 脚本。
+- 默认交付本地 Docker 镜像；规划可选的内置 Distribution registry。
+
 ## 文档
 
 - [架构与构建生命周期](docs/architecture.md)
 - [设计交付与实现顺序](docs/roadmap.md)
+- [构建参数、产物与插件计划](docs/build-contract.md)
 
 ## 相关项目
 
