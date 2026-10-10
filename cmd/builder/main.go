@@ -78,15 +78,6 @@ func hashToken() error {
 	return nil
 }
 
-func registryConfig(c *config.Config) registry.Config {
-	r := c.Registry
-	return registry.Config{
-		Listen: r.Listen, StorageDir: r.StorageDir, PublicHost: r.PublicHost, CheckURL: r.CheckURL,
-		Htpasswd: r.Htpasswd, Username: r.Username, Password: os.Getenv(r.PasswordEnv),
-		TLSCert: r.TLSCert, TLSKey: r.TLSKey, Secret: os.Getenv(r.SecretEnv),
-	}
-}
-
 func registryGC(args []string) error {
 	fs := flag.NewFlagSet("registry-gc", flag.ExitOnError)
 	path := fs.String("config", "", "configuration file")
@@ -100,7 +91,7 @@ func registryGC(args []string) error {
 	if !c.Registry.Enabled {
 		return errors.New("registry is not enabled in the configuration")
 	}
-	return registry.GC(context.Background(), registryConfig(c), *dry, *untagged)
+	return registry.GC(context.Background(), c.Registry.Config, *dry, *untagged)
 }
 
 func setupTracing(ctx context.Context) (func(context.Context) error, error) {
@@ -162,12 +153,12 @@ func serve(log *slog.Logger, args []string) error {
 
 	var publisher app.Publisher
 	if c.Registry.Enabled {
-		rc := registryConfig(c)
+		rc := c.Registry.Config
 		if err := os.MkdirAll(rc.StorageDir, 0o700); err != nil {
 			return err
 		}
 		if rc.Secret == "" {
-			log.Warn("registry: no HTTP secret configured; uploads in progress do not survive a restart", "env", c.Registry.SecretEnv)
+			log.Warn("registry: SAB_REGISTRY_HTTP_SECRET is not set; uploads in progress do not survive a restart")
 			b := make([]byte, 32)
 			_, _ = rand.Read(b)
 			rc.Secret = hex.EncodeToString(b)
@@ -177,7 +168,7 @@ func serve(log *slog.Logger, args []string) error {
 			return fmt.Errorf("registry: %w", err)
 		}
 		defer reg.Shutdown(context.Background())
-		publisher = &registry.Publisher{Config: rc, Pusher: daemon, HTTP: httpClient}
+		publisher = &registry.Publisher{Config: rc, Daemon: daemon, HTTP: httpClient}
 	}
 
 	secrets, err := c.LoadSecrets()

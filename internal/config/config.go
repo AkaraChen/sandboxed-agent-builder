@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/registry"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -59,17 +61,8 @@ type Config struct {
 		ToolchainImage   string `yaml:"toolchainImage"`
 	} `yaml:"upstreams"`
 	Registry struct {
-		Enabled     bool   `yaml:"enabled"`
-		Listen      string `yaml:"listen"`
-		StorageDir  string `yaml:"storageDir"`
-		PublicHost  string `yaml:"publicHost"`
-		CheckURL    string `yaml:"checkUrl"`
-		Htpasswd    string `yaml:"htpasswd"`
-		Username    string `yaml:"username"`
-		PasswordEnv string `yaml:"passwordEnv"`
-		TLSCert     string `yaml:"tlsCert"`
-		TLSKey      string `yaml:"tlsKey"`
-		SecretEnv   string `yaml:"secretEnv"`
+		Enabled         bool `yaml:"enabled"`
+		registry.Config `yaml:",inline"`
 	} `yaml:"registry"`
 }
 
@@ -121,8 +114,8 @@ func Load(path string) (*Config, error) {
 		def(&c.Registry.StorageDir, filepath.Join(c.DataDir, "registry"))
 		def(&c.Registry.PublicHost, c.Registry.Listen)
 		def(&c.Registry.CheckURL, "http://"+c.Registry.Listen)
-		def(&c.Registry.PasswordEnv, "SAB_REGISTRY_PASSWORD")
-		def(&c.Registry.SecretEnv, "SAB_REGISTRY_HTTP_SECRET")
+		c.Registry.Password = os.Getenv("SAB_REGISTRY_PASSWORD")
+		c.Registry.Secret = os.Getenv("SAB_REGISTRY_HTTP_SECRET")
 	}
 	if c.Worker.Lease < 3*time.Second {
 		return nil, errors.New("worker.lease must be at least 3s")

@@ -32,27 +32,31 @@ import (
 	_ "github.com/distribution/distribution/v3/registry/auth/htpasswd"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/filesystem"
 
+	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/docker"
 	"github.com/akarachen/sandboxed-agent-builder/internal/app"
 )
 
+// Config is the registry section of the builder's configuration. The
+// builder's push password and the upload-signing secret come from
+// SAB_REGISTRY_PASSWORD and SAB_REGISTRY_HTTP_SECRET.
 type Config struct {
-	Listen     string
-	StorageDir string
+	Listen     string `yaml:"listen"`
+	StorageDir string `yaml:"storageDir"`
 	// PublicHost is host:port as the daemon and callers address it.
-	PublicHost string
+	PublicHost string `yaml:"publicHost"`
 	// CheckURL is how the builder itself reaches the registry
 	// (http://127.0.0.1:5000), to confirm manifests.
-	CheckURL string
+	CheckURL string `yaml:"checkUrl"`
 	// Htpasswd enables basic auth; Username and Password are the builder's
 	// own push credentials (an entry in the file).
-	Htpasswd string
-	Username string
-	Password string
-	TLSCert  string
-	TLSKey   string
+	Htpasswd string `yaml:"htpasswd"`
+	Username string `yaml:"username"`
+	Password string `yaml:"-"`
+	TLSCert  string `yaml:"tlsCert"`
+	TLSKey   string `yaml:"tlsKey"`
 	// Secret signs upload state between requests; set it so uploads
 	// survive restarts.
-	Secret string
+	Secret string `yaml:"-"`
 }
 
 func (c Config) distribution() *configuration.Configuration {
@@ -122,16 +126,11 @@ func GC(ctx context.Context, c Config, dryRun, untagged bool) error {
 	return storage.MarkAndSweep(ctx, driver, reg, storage.GCOpts{DryRun: dryRun, RemoveUntagged: untagged})
 }
 
-// Pusher is the daemon side of publishing.
-type Pusher interface {
-	Push(ctx context.Context, img app.Image, target string, auth registry.AuthConfig, log app.LogFunc) (string, error)
-}
-
 // Publisher pushes through the daemon and confirms the manifest in the
 // registry before reporting success.
 type Publisher struct {
 	Config Config
-	Pusher Pusher
+	Daemon *docker.Daemon
 	HTTP   *http.Client
 }
 
@@ -141,7 +140,7 @@ func (p *Publisher) Publish(ctx context.Context, img app.Image, repository, tag 
 	target := p.Config.PublicHost + "/" + repository + ":" + tag
 	log("builder", "pushing "+target)
 	auth := registry.AuthConfig{Username: p.Config.Username, Password: p.Config.Password, ServerAddress: p.Config.PublicHost}
-	digest, err := p.Pusher.Push(ctx, img, target, auth, log)
+	digest, err := p.Daemon.Push(ctx, img, target, auth, log)
 	if err != nil {
 		return app.Published{}, fmt.Errorf("push %s: %w", target, err)
 	}

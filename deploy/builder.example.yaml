@@ -57,7 +57,7 @@ registry:
   checkUrl: http://127.0.0.1:5000     # how the builder itself reaches it
   # htpasswd: /etc/sandboxed-agent-builder/htpasswd   # enables basic auth
   # username: builder                                  # the builder's push account
-  passwordEnv: SAB_REGISTRY_PASSWORD
-  secretEnv: SAB_REGISTRY_HTTP_SECRET                  # keeps uploads valid across restarts
+  # The push password comes from SAB_REGISTRY_PASSWORD; SAB_REGISTRY_HTTP_SECRET
+  # keeps uploads in progress valid across restarts.
   # tlsCert: /etc/sandboxed-agent-builder/tls.crt
   # tlsKey: /etc/sandboxed-agent-builder/tls.key
