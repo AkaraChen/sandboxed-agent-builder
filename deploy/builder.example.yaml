@@ -1,7 +1,8 @@
 # sandboxed-agent-builder configuration (all keys; defaults shown where set).
 listen: 0.0.0.0:8080
-dataDir: /var/lib/sandboxed-agent-builder      # SQLite database, git cache, build contexts
-# database: /var/lib/sandboxed-agent-builder/builder.db
+dataDir: /var/lib/sandboxed-agent-builder      # git cache and build contexts
+# PostgreSQL (migrated with goose on start); SAB_DATABASE_URL overrides it.
+database: postgres://builder:builder@127.0.0.1:5432/builder?sslmode=disable
 
 docker:
   host: unix:///var/run/docker.sock            # "" uses DOCKER_HOST or the default socket

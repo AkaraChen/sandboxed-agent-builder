@@ -1,21 +1,21 @@
-package sqlite
+package postgres
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/postgres/pgtest"
 	"github.com/akarachen/sandboxed-agent-builder/internal/app"
 	"github.com/akarachen/sandboxed-agent-builder/internal/domain"
 )
 
 func open(t *testing.T) (*Store, string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "builder.db")
+	path := pgtest.URL(t)
 	s, err := Open(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
@@ -45,6 +45,20 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 	s, path := open(t)
 	mustCreate(t, s, newBuild("b1", "c", "k", t0))
 	s.Close()
+	// Reopening applies nothing new; two instances migrating at once wait
+	// on goose's session lock.
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() {
+			s, err := Open(context.Background(), path)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			s.Close()
+		})
+	}
+	wg.Wait()
 	s2, err := Open(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +91,7 @@ func TestConcurrentClaimTakesEachAttemptOnce(t *testing.T) {
 	for i := range builds {
 		mustCreate(t, s, newBuild(fmt.Sprintf("b%02d", i), "c", fmt.Sprintf("k%d", i), t0.Add(time.Duration(i)*time.Millisecond)))
 	}
-	// Two handles on the same file stand for two builder processes.
+	// Two pools stand for two builder instances.
 	other, err := Open(ctx, path)
 	if err != nil {
 		t.Fatal(err)
@@ -338,5 +352,23 @@ func TestLogLimitTruncates(t *testing.T) {
 	a, _ := s.GetAttempt(ctx, "b", c.Attempt.ID)
 	if !a.LogsTruncated {
 		t.Fatal("not marked truncated")
+	}
+}
+
+func TestLogTextIsStorable(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	mustCreate(t, s, newBuild("b", "c", "k", t0))
+	c, _ := s.Claim(ctx, "w", t0, t0.Add(time.Minute))
+	if err := s.AppendLogs(ctx, c.Lease, []domain.LogEntry{{Time: t0, Stage: domain.StageBuild, Stream: "buildkit", Text: "nul\x00byte bad\xffutf8"}}, 0); err != nil {
+		t.Fatal(err)
+	}
+	logs, _ := s.ListLogs(ctx, c.Attempt.ID, 0, 10)
+	if len(logs) != 1 || logs[0].Text != "nulbyte bad�utf8" || !logs[0].Time.Equal(t0) {
+		t.Fatalf("%+v", logs)
+	}
+	b, _ := s.GetBuild(ctx, "c", "b")
+	if b.CreatedAt.Location() != time.UTC || !b.CreatedAt.Equal(t0) {
+		t.Fatalf("created_at %s", b.CreatedAt)
 	}
 }

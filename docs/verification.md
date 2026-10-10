@@ -12,7 +12,7 @@ go test -race -tags docker ./internal/adapter/docker   # 需要 Docker socket
 
 | 范围 | 覆盖 |
 | --- | --- |
-| `adapter/sqlite` | 迁移重复执行；幂等键按调用方作用域唯一；8 个 worker 经两个数据库句柄（模拟两个进程）并发领取 40 个尝试，每个只被领取一次；FIFO；租约续期、过期、接管后旧 worker 的续期/日志/完成均被拒绝（代次）；取消 queued/running/已成功；重试（活跃时拒绝、幂等重放、键冲突、保留旧尝试和日志）；尝试与日志分页；日志大小上限与截断标记 |
+| `adapter/postgres`（真实 PostgreSQL 17，每个测试单独建库） | goose 迁移重复执行，两个实例同时迁移；幂等键按调用方作用域唯一；8 个 worker 经两个连接池（模拟两个实例）用 SKIP LOCKED 并发领取 40 个尝试，每个只被领取一次；日志中的 NUL 与非法 UTF-8 可以写入；时间以 UTC 读出；FIFO；租约续期、过期、接管后旧 worker 的续期/日志/完成均被拒绝（代次）；取消 queued/running/已成功；重试（活跃时拒绝、幂等重放、键冲突、保留旧尝试和日志）；尝试与日志分页；日志大小上限与截断标记 |
 | `app` | 提交幂等（键序/空白无关、重放不再解析、内容不同 409、新键同规格新构建）；非法规格不解析；成功路径与 secret 脱敏；失败后重试保留历史且不重新解析；运行中取消直到执行器返回才记录 cancelled；租约丢失后不写结果；发布失败记为 publish 阶段且无 registry 引用；核对：有镜像补录成功、无镜像 interrupted、registry 未确认 interrupted、活租约不动；关闭时超出宽限期记 interrupted |
 | `api` | 认证、缺幂等键、202/200 重放/409、跨调用方 404、`Retry-After`、重试冲突与重放、尝试分页与 limit 校验、日志增量与 `complete`、取消 |
 | `spec`、`plugin`、`plan`、`adapter/resolve` | 默认值与拒绝规则（Ubuntu、未验证 Alpine、未知/启动脚本 secret…）；插件读取与 Codex 配置生成、变量规则、skill 冲突；每个 build 脚本独立 RUN 且 secret 只挂在对应步骤、startup 只复制不执行、插件内容与锁定摘要不符时拒绝；生成的入口脚本按序执行 startup、失败不启动 oar；npm latest 稳定版、预发布拒绝、Node 主版本线选择与 sha256 |
@@ -49,6 +49,16 @@ scripts/smoke-image.sh IMAGE ~/.codex/auth.json ./evidence
 - 打开会话后，经 `input`（`wait: true`）跑了一轮真实 Codex，输出 `MCP=MAGIC-k123-static-ok SKILL=KUMQUAT-7 HOOK=ZEBRA-42 TOUCH=blocked`。`forbidden.txt` 没有被创建，两个生命周期 hook 都执行了，SSE 同时收到 14 个事件。
 - 让 Codex 执行 `sleep 90`，运行中调用 `abort`，会话变为 `idle` 且 `lastTurnOutcome: aborted`。
 - `DELETE` 返回 204。用 `resume` 重新打开同一个 thread 后，Codex 答出了上一轮得到的 `KUMQUAT-7`。用不存在的 id 恢复返回 404。
+
+## PostgreSQL（goose）与多实例
+
+用两个 builder 实例共享同一个 PostgreSQL 17 数据库（同一 Docker daemon，端口和数据目录各自独立），实测结果：
+
+- 两个实例同时启动，goose 迁移只执行一次（`goose_db_version`：0、1）。
+- 经实例 1 提交 4 个各需 20 秒的构建：两个实例各领取了一部分，4 个都成功；经实例 2 也能查到实例 1 受理的构建及其日志。
+- 构建在实例 1 上运行时，经实例 2 发出取消：返回 202，实例 1 停止构建后状态变为 `cancelled`。
+- 构建在实例 1 上运行时 `kill -9` 实例 1：实例 2 在租约过期后接管（generation 1 → 2），记为 `interrupted`、`recovered: true`。
+- registry 模式：推送并核对 digest，库里 `artifact->>'registryRef'` 与 API 返回一致；删除本地镜像后按 digest 拉取成功。
 
 ## Alpine 结论
 

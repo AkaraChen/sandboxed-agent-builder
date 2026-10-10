@@ -2,20 +2,43 @@
 # through its socket, so built images land in the host daemon, where the
 # caller (AXP) runs them. Host networking lets the daemon reach the built-in
 # registry at 127.0.0.1:5000 (the daemon resolves registry addresses on the
-# host, not in this container).
+# host, not in this container). PostgreSQL is published on 127.0.0.1:5432
+# for the builder; more builder instances may share it (attempts are claimed
+# with SKIP LOCKED), as long as they use the same Docker daemon.
 services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:5432:5432
+    environment:
+      POSTGRES_USER: builder
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-builder}
+      POSTGRES_DB: builder
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "builder"]
+      interval: 2s
+      retries: 30
+
   builder:
     build: ..
     network_mode: host
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - builder-data:/var/lib/sandboxed-agent-builder
       - ./builder.yaml:/etc/sandboxed-agent-builder/builder.yaml:ro
     environment:
+      SAB_DATABASE_URL: postgres://builder:${POSTGRES_PASSWORD:-builder}@127.0.0.1:5432/builder?sslmode=disable
       NPM_TOKEN: ${NPM_TOKEN:-}
       SAB_REGISTRY_PASSWORD: ${SAB_REGISTRY_PASSWORD:-}
       SAB_REGISTRY_HTTP_SECRET: ${SAB_REGISTRY_HTTP_SECRET:-}
       # OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
 volumes:
+  postgres-data:
   builder-data:

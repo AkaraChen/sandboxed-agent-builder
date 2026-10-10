@@ -33,10 +33,10 @@
 
 | 抽象 / 功能 | 去掉后可省 | 保留理由 |
 | --- | --- | --- |
-| `Store` 端口（`app` → `adapter/sqlite`） | 约 35 行接口 | 任务明确要求数据库 adapter 分层；去掉后应用层要直接依赖 SQLite 类型。PostgreSQL 也通过这个接口接入 |
+| `Store` 端口（`app` → `adapter/postgres`） | 约 35 行接口 | 任务明确要求数据库 adapter 分层；去掉后应用层要直接依赖 pgx 类型 |
 | `Executor`、`Publisher`、`Resolver` 端口 | 各 10–20 行 | 测试替身依赖它们：应用层测试不需要 Docker、registry 或网络就能覆盖取消、租约丢失、发布失败和核对 |
 | `domain` 与 `app` 分包 | 0 行 | 合并省不了代码，只会模糊依赖方向 |
-| 失败信息改用单个 JSON 列（A13） | 约 6 行 | 保留 `failure_stage` 和 `failure_code` 两列，运维可以直接按失败阶段查询 |
+| 失败信息改用单个 JSON 列（A13） | 约 6 行 | 当时 SQLite 下保留为三列；迁移到 PostgreSQL 后已改为 `jsonb`，仍可按 `failure->>'stage'` 查询 |
 | 提交时先按幂等键查找（A14） | 约 10 行 | 重放时不重新解析上游，也不受上游故障影响（API 文档承诺了这一点） |
 | `noCache`（A15） | 约 15 行 | 唯一能真正重建（不复用层缓存，例如拿到新的 apt 包）的方式 |
 | 上游地址可配置（A16） | 约 15 行 | npm、Node.js 下载源和 akhook 仓库在受限网络里需要换成镜像源 |
@@ -49,3 +49,7 @@
 - 用该镜像运行 `scripts/smoke-image.sh`，真实 Codex 一轮通过：MCP、skill、两个生命周期 hook、`PreToolUse` 拦截、startup 脚本均正常。
 - 取消运行中的构建 → `cancelled`；SIGTERM → 立即 `interrupted`；`kill -9` 后重启 → 租约过期后 `interrupted`（`recovered`）；没有残留进程。
 - `go vet`、`go test -race ./...`、`-tags docker` 集成测试、staticcheck 和 agent-server 的 `nr test` 全部通过。
+
+## 后续：SQLite 换成 PostgreSQL
+
+按要求去掉 SQLite，只支持 PostgreSQL，迁移改用 goose。生产代码从 3866 行变为 3849 行：goose 替代了自写的迁移器，pgx 的 `CollectRows`/`COPY`/`RETURNING` 也让存储代码更短。

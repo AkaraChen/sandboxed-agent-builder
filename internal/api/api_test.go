@@ -9,12 +9,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/sqlite"
+	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/postgres"
+	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/postgres/pgtest"
 	"github.com/akarachen/sandboxed-agent-builder/internal/app"
 	"github.com/akarachen/sandboxed-agent-builder/internal/spec"
 )
@@ -30,12 +30,12 @@ func hash(token string) string {
 	return hex.EncodeToString(s[:])
 }
 
-func server(t *testing.T) (*httptest.Server, *sqlite.Store) {
-	store, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "b.db"))
+func server(t *testing.T) (*httptest.Server, *postgres.Store) {
+	store, err := postgres.Open(context.Background(), pgtest.URL(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(store.Close)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	policy := spec.Policy{Platforms: []string{"linux/amd64"}, PluginSource: func(string) bool { return false }}
 	svc := &app.Service{Store: store, Resolver: resolver{}, Policy: func() spec.Policy { return policy }, Log: log}
@@ -142,7 +142,7 @@ func TestBuildLifecycle(t *testing.T) {
 	}
 }
 
-func failWith(t *testing.T, store *sqlite.Store, c *app.Claim) {
+func failWith(t *testing.T, store *postgres.Store, c *app.Claim) {
 	t.Helper()
 	ctx := context.Background()
 	if err := store.AppendLogs(ctx, c.Lease, logLines("failed step"), 0); err != nil {

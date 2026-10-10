@@ -5,14 +5,14 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/sqlite"
+	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/postgres"
+	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/postgres/pgtest"
 	"github.com/akarachen/sandboxed-agent-builder/internal/app"
 	"github.com/akarachen/sandboxed-agent-builder/internal/domain"
 	"github.com/akarachen/sandboxed-agent-builder/internal/spec"
@@ -71,7 +71,7 @@ func (p *publisher) Find(_ context.Context, repo, tag string) (*app.Published, e
 }
 
 type env struct {
-	store    *sqlite.Store
+	store    *postgres.Store
 	service  *app.Service
 	worker   *app.Worker
 	exec     *executor
@@ -81,11 +81,11 @@ type env struct {
 
 func setup(t *testing.T) *env {
 	t.Helper()
-	store, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "b.db"))
+	store, err := postgres.Open(context.Background(), pgtest.URL(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(store.Close)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	e := &env{store: store, resolver: &resolver{}, pub: &publisher{found: map[string]*app.Published{}}}
 	e.exec = &executor{images: map[string]*app.Image{}, fn: func(_ context.Context, req app.BuildRequest, log app.LogFunc) (app.Image, error) {

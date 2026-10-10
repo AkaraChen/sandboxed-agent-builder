@@ -6,11 +6,11 @@
 
 ## 当前阶段
 
-Go + chi 实现的可运行服务，采用干净架构；SQLite 持久化，经 Docker socket 使用 daemon 内置的 BuildKit 构建，可选内置 Distribution registry。验证记录见 [docs/verification.md](docs/verification.md)。
+Go + chi 实现的可运行服务，采用干净架构；PostgreSQL 持久化（goose 迁移），经 Docker socket 使用 daemon 内置的 BuildKit 构建，可选内置 Distribution registry。验证记录见 [docs/verification.md](docs/verification.md)。
 
 ## 运行
 
-需要 Go 1.26、git 和 Docker（BuildKit 随 Docker daemon 提供）。
+需要 Go 1.26、git、Docker（BuildKit 随 Docker daemon 提供）和 PostgreSQL 17+。
 
 ```sh
 go build -o builder ./cmd/builder
@@ -21,7 +21,7 @@ printf %s "$TOKEN" | sha256sum   # 填入配置 auth.callers[].tokenSha256
 容器部署见 [deploy/compose.yaml](deploy/compose.yaml)（挂载 Docker socket 等同于宿主机 root 权限，只在可信环境运行）。
 
 ```sh
-go vet ./... && go test -race ./...
+go vet ./... && go test -race ./...                       # 数据库测试用 SAB_TEST_DATABASE_URL，未设置时自动启动 sab-test-postgres 容器
 go test -race -tags docker ./internal/adapter/docker   # 需要 Docker
 cd runtime/agent-server && ni && nr test                # 镜像内控制 API（Node.js 24）
 ```

@@ -16,8 +16,9 @@ import (
 )
 
 type Config struct {
-	Listen   string `yaml:"listen"`
-	DataDir  string `yaml:"dataDir"`
+	Listen  string `yaml:"listen"`
+	DataDir string `yaml:"dataDir"`
+	// Database is the PostgreSQL connection URL; SAB_DATABASE_URL overrides it.
 	Database string `yaml:"database"`
 	Docker   struct {
 		Host string `yaml:"host"`
@@ -86,7 +87,12 @@ func Load(path string) (*Config, error) {
 	}
 	def(&c.Listen, "127.0.0.1:8080")
 	def(&c.DataDir, "./data")
-	def(&c.Database, filepath.Join(c.DataDir, "builder.db"))
+	if v := os.Getenv("SAB_DATABASE_URL"); v != "" {
+		c.Database = v
+	}
+	if c.Database == "" {
+		return nil, errors.New("database: set a PostgreSQL URL (database or SAB_DATABASE_URL)")
+	}
 	if c.Worker.Concurrency == 0 {
 		c.Worker.Concurrency = 2
 	}

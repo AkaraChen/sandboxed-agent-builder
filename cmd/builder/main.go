@@ -32,9 +32,9 @@ import (
 
 	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/docker"
 	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/gitsource"
+	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/postgres"
 	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/registry"
 	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/resolve"
-	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/sqlite"
 	"github.com/akarachen/sandboxed-agent-builder/internal/api"
 	"github.com/akarachen/sandboxed-agent-builder/internal/app"
 	"github.com/akarachen/sandboxed-agent-builder/internal/config"
@@ -117,7 +117,7 @@ func serve(log *slog.Logger, args []string) error {
 			return err
 		}
 	}
-	store, err := sqlite.Open(ctx, c.Database)
+	store, err := postgres.Open(ctx, c.Database)
 	if err != nil {
 		return fmt.Errorf("database: %w", err)
 	}

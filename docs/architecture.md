@@ -119,7 +119,7 @@ oar 是产物中的 runtime 驱动依赖，builder 不通过它开启会话。oa
 | --- | --- | --- |
 | 代码量 | 少，单包即可 | 多出端口接口与装配代码 |
 | 状态规则 | 散落在 handler 与 worker 中 | 集中在领域与应用层，状态转换、幂等、租约、取消、核对各有一处实现 |
-| 测试 | 需要真实 Docker 与数据库 | 应用层用假执行器在真实 SQLite 上测并发、取消、租约丢失与恢复 |
+| 测试 | 需要真实 Docker 与数据库 | 应用层用假执行器在真实 PostgreSQL 上测并发、取消、租约丢失与恢复 |
 | 演进 | 换数据库或日志存储要改用例 | 新增 adapter（PostgreSQL、外部日志）不改用例 |
 
 ### 包结构
@@ -132,7 +132,7 @@ internal/spec               请求规格、默认值与校验（Policy）、锁�
 internal/plugin             Agent Plugin 读取与校验，编译为 Codex 原生配置与 akhook 规则
 internal/plan               构建上下文与 Dockerfile 生成、镜像入口脚本
 internal/api                chi 路由、认证、错误映射、分页
-internal/adapter/sqlite     Store：迁移、事务领取、租约代次、日志
+internal/adapter/postgres   Store：goose 迁移、SKIP LOCKED 领取、租约代次、日志
 internal/adapter/docker     Executor：Docker SDK + daemon 内置 BuildKit；镜像 digest；推送
 internal/adapter/registry   内置 distribution/v3 registry 与 Publisher
 internal/adapter/resolve    Resolver：基础镜像 digest、npm、Node.js、akhook 提交、插件
@@ -142,15 +142,22 @@ internal/config             配置文件与 build secret 来源
 
 依赖方向：`api`、`adapter/*` → `app` → `plan`、`spec`、`domain`。领域与应用层不引用 Docker、SQL 或 HTTP 类型。构建计划是只依赖 `Fetcher` 的纯函数，由 worker 直接调用。端口只保留在确实有第二种实现（测试替身或可替换的外部系统）的地方，取舍见 [ablation.md](ablation.md)。
 
-### 数据库选型
+### 数据库
 
-| | SQLite（采用） | PostgreSQL |
-| --- | --- | --- |
-| 部署 | 嵌入、单文件，随数据目录备份 | 额外服务 |
-| 并发领取 | `BEGIN IMMEDIATE` 串行化写事务，同机多进程共享文件也安全 | `FOR UPDATE SKIP LOCKED`，适合多节点 |
-| 适用 | 单 Docker daemon 的单节点（当前拓扑：Docker socket 决定了执行在一台机器上） | 多台 API/worker 节点、多个 daemon |
+只支持 PostgreSQL（17 起验证），驱动为 pgx。
 
-驱动为 `modernc.org/sqlite`（纯 Go，无 cgo，`-race` 可用）。迁移是嵌入的 SQL 文件，按序号在事务中执行并记入 `schema_migrations`。`Store` 接口与事务语义（领取、代次条件写入）不依赖 SQLite 特性，PostgreSQL adapter 可按同一接口实现。
+- **迁移**：用 goose 管理，迁移文件嵌入二进制（`internal/adapter/postgres/migrations`），版本记录在 `goose_db_version`。启动时执行，并持有 goose 的 Postgres session lock，多个实例同时启动也只会迁移一次。
+- **领取**：`UPDATE … WHERE id = (SELECT … ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id`。多个 builder 实例共享同一队列时互不阻塞；接管租约过期的尝试走同一条语句。
+- **并发写**：
+  - 取消与重试锁住对应的 build 行（`FOR UPDATE`）。
+  - 日志追加锁住 attempt 行并校验租约，再用 `COPY` 批量写入。
+  - 提交用 `INSERT … ON CONFLICT (caller, idempotency_key) DO NOTHING` 处理同键并发。
+- **类型**：
+  - 时间用 `timestamptz`，读出时统一转成 UTC。
+  - 原始请求体用 `bytea`，原样保存。
+  - 解析后的规格、失败信息、产物用 `jsonb`，可直接按 `failure->>'stage'` 查询。
+  - 日志文本写入前去掉 NUL、替换非法 UTF-8，因为 PostgreSQL 的 `text` 不接受这两种内容。
+- **部署拓扑**：多个 builder 实例可以共享同一个数据库，前提是它们使用同一个 Docker daemon。镜像产物和 attempt 的 tag 都在这个 daemon 里，核对时也要查它。
 
 ### 执行与恢复
 
