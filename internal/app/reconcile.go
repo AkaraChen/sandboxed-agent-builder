@@ -19,26 +19,19 @@ import (
 //
 // It returns how many attempts it settled.
 func (r *Worker) Reconcile(ctx context.Context) (int, error) {
-	now := time.Now().UTC()
-	expired, err := r.Store.Expired(ctx, now, 50)
-	if err != nil {
-		return 0, err
-	}
 	n := 0
-	for _, a := range expired {
-		c, err := r.Store.TakeOver(ctx, a.ID, r.Config.ID, now, now.Add(r.Config.Lease))
-		if err != nil {
-			r.Log.Warn("taking over an attempt failed", "attempt_id", a.ID, "err", err)
-			continue
+	for {
+		now := time.Now().UTC()
+		c, err := r.Store.TakeOver(ctx, r.Config.ID, now, now.Add(r.Config.Lease))
+		if err != nil || c == nil {
+			return n, err
 		}
-		if c == nil {
-			continue
-		}
+		// An attempt that cannot be settled now keeps the new lease and is
+		// tried again once it expires.
 		if r.settle(ctx, c) {
 			n++
 		}
 	}
-	return n, nil
 }
 
 func (r *Worker) settle(ctx context.Context, c *Claim) bool {

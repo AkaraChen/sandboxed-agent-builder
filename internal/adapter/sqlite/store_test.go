@@ -139,19 +139,15 @@ func TestStaleLeaseIsFenced(t *testing.T) {
 	if _, err := s.Renew(ctx, old.Lease, t0.Add(20*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if exp, _ := s.Expired(ctx, t0.Add(15*time.Second), 10); len(exp) != 0 {
-		t.Fatalf("renewed lease expired: %v", exp)
+	if early, _ := s.TakeOver(ctx, "reconciler", t0.Add(15*time.Second), t0.Add(time.Minute)); early != nil {
+		t.Fatal("took over a renewed lease")
 	}
-	exp, _ := s.Expired(ctx, t0.Add(25*time.Second), 10)
-	if len(exp) != 1 {
-		t.Fatalf("expired: %v", exp)
-	}
-	taken, err := s.TakeOver(ctx, "b1-a1", "reconciler", t0.Add(25*time.Second), t0.Add(time.Minute))
+	taken, err := s.TakeOver(ctx, "reconciler", t0.Add(25*time.Second), t0.Add(time.Minute))
 	if err != nil || taken == nil || taken.Lease.Generation != 2 {
 		t.Fatalf("take over: %+v %v", taken, err)
 	}
 	// A second takeover of a live lease does nothing.
-	if again, _ := s.TakeOver(ctx, "b1-a1", "x", t0.Add(26*time.Second), t0.Add(time.Minute)); again != nil {
+	if again, _ := s.TakeOver(ctx, "x", t0.Add(26*time.Second), t0.Add(time.Minute)); again != nil {
 		t.Fatal("took over a live lease")
 	}
 	ok := domain.Outcome{Status: domain.StatusSucceeded, Artifact: &domain.Artifact{ImageID: "sha256:x"}}

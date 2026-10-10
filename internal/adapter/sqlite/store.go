@@ -355,24 +355,32 @@ func (s *Store) loadClaim(ctx context.Context, q querier, attemptID string) (*ap
 	return &app.Claim{Build: b, Attempt: a, Lease: domain.Lease{AttemptID: a.ID, WorkerID: a.WorkerID, Generation: a.Generation}}, nil
 }
 
+// Claim takes the oldest queued attempt for workerID.
 func (s *Store) Claim(ctx context.Context, workerID string, now, until time.Time) (*app.Claim, error) {
+	return s.claim(ctx, workerID, until, fmt.Sprintf("status = 'running', started_at = %d, ", now.UnixNano()), `status = 'queued'`)
+}
+
+// TakeOver takes the oldest running attempt whose lease expired.
+func (s *Store) TakeOver(ctx context.Context, workerID string, now, until time.Time) (*app.Claim, error) {
+	return s.claim(ctx, workerID, until, "", `status = 'running' AND lease_expires_at < ?`, now.UnixNano())
+}
+
+// claim takes the oldest attempt matching where for workerID inside one
+// write transaction; the generation increment fences the previous holder.
+func (s *Store) claim(ctx context.Context, workerID string, until time.Time, set, where string, args ...any) (*app.Claim, error) {
 	var out *app.Claim
 	err := s.tx(ctx, func(tx *sql.Tx) error {
 		var id string
-		err := tx.QueryRowContext(ctx, `SELECT id FROM attempts WHERE status = 'queued' ORDER BY created_at, id LIMIT 1`).Scan(&id)
+		err := tx.QueryRowContext(ctx, `SELECT id FROM attempts WHERE `+where+` ORDER BY created_at, id LIMIT 1`, args...).Scan(&id)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		res, err := tx.ExecContext(ctx, `UPDATE attempts SET status = 'running', worker_id = ?, generation = generation + 1, lease_expires_at = ?, started_at = ?
-			WHERE id = ? AND status = 'queued'`, workerID, until.UnixNano(), now.UnixNano(), id)
-		if err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE attempts SET `+set+`worker_id = ?, generation = generation + 1, lease_expires_at = ? WHERE id = ?`,
+			workerID, until.UnixNano(), id); err != nil {
 			return err
-		}
-		if n, _ := res.RowsAffected(); n != 1 {
-			return nil
 		}
 		out, err = s.loadClaim(ctx, tx, id)
 		return err
@@ -465,38 +473,4 @@ func (s *Store) Finish(ctx context.Context, l domain.Lease, o domain.Outcome, no
 		}
 		return nil
 	})
-}
-
-func (s *Store) Expired(ctx context.Context, now time.Time, limit int) ([]domain.Attempt, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+attemptCols+` FROM attempts WHERE status = 'running' AND lease_expires_at < ? ORDER BY lease_expires_at LIMIT ?`, now.UnixNano(), limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []domain.Attempt
-	for rows.Next() {
-		a, err := scanAttempt(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, a)
-	}
-	return out, rows.Err()
-}
-
-func (s *Store) TakeOver(ctx context.Context, attemptID, workerID string, now, until time.Time) (*app.Claim, error) {
-	var out *app.Claim
-	err := s.tx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `UPDATE attempts SET worker_id = ?, generation = generation + 1, lease_expires_at = ?
-			WHERE id = ? AND status = 'running' AND lease_expires_at < ?`, workerID, until.UnixNano(), attemptID, now.UnixNano())
-		if err != nil {
-			return err
-		}
-		if n, _ := res.RowsAffected(); n != 1 {
-			return nil
-		}
-		out, err = s.loadClaim(ctx, tx, attemptID)
-		return err
-	})
-	return out, err
 }

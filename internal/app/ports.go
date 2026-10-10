@@ -61,11 +61,9 @@ type Store interface {
 	AppendLogs(ctx context.Context, l domain.Lease, entries []domain.LogEntry, maxBytes int64) error
 	Finish(ctx context.Context, l domain.Lease, o domain.Outcome, now time.Time, recovered bool) error
 
-	// Expired lists running attempts whose lease ended before now.
-	Expired(ctx context.Context, now time.Time, limit int) ([]domain.Attempt, error)
-	// TakeOver claims an expired running attempt for reconciliation,
-	// fencing out its old worker.
-	TakeOver(ctx context.Context, attemptID, workerID string, now, until time.Time) (*Claim, error)
+	// TakeOver claims the oldest running attempt whose lease expired, for
+	// reconciliation, fencing out its old worker; nil when there is none.
+	TakeOver(ctx context.Context, workerID string, now, until time.Time) (*Claim, error)
 }
 
 // Resolver locks a normalized spec: digests, exact versions, commits.

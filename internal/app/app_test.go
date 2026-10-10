@@ -324,7 +324,7 @@ func TestLostLeaseWritesNothing(t *testing.T) {
 	var claim *app.Claim
 	for claim == nil {
 		time.Sleep(20 * time.Millisecond)
-		claim, _ = e.store.TakeOver(ctx, s.Attempt.ID, "reconciler", time.Now().Add(time.Hour), time.Now().Add(2*time.Hour))
+		claim, _ = e.store.TakeOver(ctx, "reconciler", time.Now().Add(time.Hour), time.Now().Add(2*time.Hour))
 	}
 	if err := e.store.Finish(ctx, claim.Lease, domain.Outcome{Status: domain.StatusInterrupted,
 		Failure: &domain.Failure{Stage: domain.StageReconcile, Code: domain.CodeInterrupted}}, time.Now(), true); err != nil {
