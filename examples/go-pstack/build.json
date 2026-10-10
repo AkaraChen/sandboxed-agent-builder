@@ -1,0 +1,49 @@
+{
+  "spec": {
+    "base": {
+      "family": "debian-slim",
+      "version": "trixie"
+    },
+    "agent": {
+      "type": "codex",
+      "codex": {
+        "version": "latest"
+      }
+    },
+    "plugins": [
+      {
+        "source": "https://github.com/cursor/plugins",
+        "revision": "d73344bee8cf22e53b9d5f4cf5749d38ba38c174",
+        "path": "pstack",
+        "exclude": [
+          "agents"
+        ]
+      }
+    ],
+    "scripts": {
+      "build": [
+        {
+          "name": "system packages for Go (curl, gcc for cgo and -race, make)",
+          "run": "apt-get update && apt-get install -y --no-install-recommends curl gcc libc6-dev make && rm -rf /var/lib/apt/lists/*"
+        },
+        {
+          "name": "Go 1.27.2 toolchain, checked against go.dev's sha256",
+          "run": "set -eu\nversion=go1.27.2\ncase \"$(dpkg --print-architecture)\" in\n  amd64) arch=amd64; sum=ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5 ;;\n  arm64) arch=arm64; sum=94f3e30b8e374bc285e7dadc11e0865726b9bc6e85b841ccceaabc0214c6b7c8 ;;\n  *) echo \"no Go build for $(dpkg --print-architecture)\" >&2; exit 1 ;;\nesac\ncurl -fsSL -o /tmp/go.tar.gz \"https://go.dev/dl/$version.linux-$arch.tar.gz\"\necho \"$sum  /tmp/go.tar.gz\" | sha256sum -c -\ntar -C /usr/local -xzf /tmp/go.tar.gz\nrm /tmp/go.tar.gz\nln -s /usr/local/go/bin/go /usr/local/go/bin/gofmt /usr/local/bin/\ntest \"$(go env GOVERSION)\" = \"$version\""
+        },
+        {
+          "name": "gopls v0.23.0",
+          "run": "GOBIN=/usr/local/bin GOPATH=/tmp/gopath GOCACHE=/tmp/gocache go install golang.org/x/tools/gopls@v0.23.0 && rm -rf /tmp/gopath /tmp/gocache && gopls version"
+        }
+      ],
+      "startup": [
+        {
+          "name": "trust the mounted workspace for git",
+          "run": "git config --global --add safe.directory /workspace"
+        }
+      ]
+    },
+    "output": {
+      "type": "local"
+    }
+  }
+}

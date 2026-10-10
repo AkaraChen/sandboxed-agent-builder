@@ -60,6 +60,16 @@ scripts/smoke-image.sh IMAGE ~/.codex/auth.json ./evidence
 - 构建在实例 1 上运行时 `kill -9` 实例 1：实例 2 在租约过期后接管（generation 1 → 2），记为 `interrupted`、`recovered: true`。
 - registry 模式：推送并核对 digest，库里 `artifact->>'registryRef'` 与 API 返回一致；删除本地镜像后按 digest 拉取成功。
 
+## 示例：Go + pstack
+
+用 `examples/go-pstack/build.json` 在 PostgreSQL 上的 builder 里真实构建，再用 `examples/go-pstack/run.sh` 驱动：
+
+- **解析**：pstack 锁定到 `cursor/plugins@d73344be`，格式 `cursor`，51 个 skill；`exclude: ["agents"]`。不写 `exclude` 时，提交会被拒绝并提示原因（单元测试与真实插件均验证）。
+- **第 1 次尝试失败**：导出镜像时 containerd 报 `ref … locked … unavailable`，记为 `build_failed`。这台机器上同时运行着约 30 个容器，属于 daemon 侧的瞬时冲突。
+- **第 2 次尝试成功**：经 `retry` 创建 attempt 2，成功，第 1 次的失败与日志都保留。镜像约 502 MB，内有 Go 1.27.2、gopls v0.23.0，`/etc/codex/skills` 下 51 个 pstack skill。
+- **驱动 Codex**：容器里没有 Codex 登录。经控制 API 打开会话，`provider` 指向 OOMOL 的 OpenAI 兼容服务（Responses API），模型 `gpt-6-astra`。Codex 说明会使用 pstack 的 `tdd` 和 `unslop` skill，先写出失败的表驱动测试（`undefined: Reverse`），再实现按 rune 反转，`go test -race ./...` 通过。容器内 `/workspace` 有 `go.mod`、`reverse.go`、`reverse_test.go`，复跑 `go test` 通过。
+- **key 未泄漏**：API key 在整个运行日志中出现 0 次。
+
 ## Alpine（已移除）
 
 Alpine 3.22 曾在 linux/amd64 上通过与 Debian 相同的全部验证（上表），但按评审意见已移除：规格只接受 `debian-slim` 与 `debian`，`alpine` 在提交时被拒绝；musl 版 Node.js 下载与相关配置也一并删除。akhook 仍在 `rust:1-alpine` 构建阶段编译为静态二进制，这只是工具链选择，不影响基础镜像。

@@ -1,14 +1,18 @@
 // Package plugin reads Agent Plugins and compiles them to Codex's native
 // configuration.
 //
-// An Agent Plugin is a directory no agent harness owns (the standard of
-// AXP's packages/plugins-go):
+// Two layouts are read. An Agent Plugin is a directory no agent harness
+// owns (the standard of AXP's packages/plugins-go):
 //
 //	plugin.json       name, version, description
 //	mcp.json          MCP servers, in the standard mcpServers shape
 //	skills/*/SKILL.md Agent Skills
 //	akhook.yml        hooks, as akhook rules
 //	setup             run once while the image is built
+//
+// A Cursor plugin (.cursor-plugin/plugin.json, cursor.go) contributes its
+// skills and MCP servers; its agents, commands, rules and Cursor hooks have
+// no Codex form here and must be excluded explicitly.
 //
 // Hooks are not compiled here: akhook runs them inside the image (it holds
 // the Codex hook adapter), and the builder only merges the plugins' rules
@@ -22,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -41,6 +46,9 @@ type Manifest struct {
 
 // Server is an MCP server: a command (stdio) or a URL (streamable HTTP).
 type Server struct {
+	// Type is "stdio", "http" or "streamable-http" when given (Cursor's
+	// mcp.json names it); the command or url decides either way.
+	Type    string            `json:"type,omitempty"`
 	Command string            `json:"command,omitempty"`
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
@@ -49,9 +57,10 @@ type Server struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
-// Skill is one skills/<dir>/SKILL.md.
+// Skill is one <dir>/SKILL.md.
 type Skill struct {
-	Dir  string // directory name under skills/
+	Dir  string // the skill directory's name
+	Path string // the skill directory, relative to the plugin, slash-separated
 	Name string // the frontmatter name, which Codex identifies it by
 }
 
@@ -64,6 +73,8 @@ type Plugin struct {
 	// Hooks is akhook.yml's rules, when there is one.
 	Hooks []map[string]any
 	Setup bool
+	// Format is "agent-plugin" or "cursor".
+	Format string
 	// RuntimeEnv is the environment variables the plugin's MCP servers read
 	// when the agent runs.
 	RuntimeEnv []string
@@ -88,37 +99,80 @@ var (
 	ToolEvents      = []string{"shell_exec", "file_change", "tool_call"}
 )
 
-// Read reads and checks the plugin in dir.
-func Read(dir string) (*Plugin, error) {
-	p := &Plugin{Dir: dir, Servers: map[string]Server{}}
+// Components a plugin may have; a build lists the ones to leave out.
+const (
+	ComponentSkills   = "skills"
+	ComponentMCP      = "mcpServers"
+	ComponentHooks    = "hooks"
+	ComponentAgents   = "agents"
+	ComponentCommands = "commands"
+	ComponentRules    = "rules"
+)
+
+// Read reads and checks the plugin in dir, leaving out the components in
+// exclude.
+func Read(dir string, exclude []string) (*Plugin, error) {
+	if _, err := os.Stat(filepath.Join(dir, ".cursor-plugin", "plugin.json")); err == nil {
+		return readCursor(dir, exclude)
+	}
+	p := &Plugin{Dir: dir, Servers: map[string]Server{}, Format: "agent-plugin"}
 	if err := readJSON(filepath.Join(dir, "plugin.json"), &p.Manifest); err != nil {
 		return nil, err
 	}
 	if !nameRE.MatchString(p.Name) {
 		return nil, fmt.Errorf("plugin.json: name %q must match %s", p.Name, nameRE)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "hooks", "hooks.json")); err == nil {
+	use := func(c string) bool { return !slices.Contains(exclude, c) }
+	if _, err := os.Stat(filepath.Join(dir, "hooks", "hooks.json")); err == nil && use(ComponentHooks) {
 		return nil, fmt.Errorf("%s: hooks/hooks.json is not supported; a plugin's hooks are akhook rules in akhook.yml", p.Name)
 	}
-
-	var mcp struct {
-		Servers map[string]Server `json:"mcpServers"`
+	if use(ComponentMCP) {
+		var mcp struct {
+			Servers map[string]Server `json:"mcpServers"`
+		}
+		switch err := readJSON(filepath.Join(dir, "mcp.json"), &mcp); {
+		case errors.Is(err, os.ErrNotExist):
+		case err != nil:
+			return nil, err
+		default:
+			p.Servers = mcp.Servers
+		}
 	}
-	switch err := readJSON(filepath.Join(dir, "mcp.json"), &mcp); {
-	case errors.Is(err, os.ErrNotExist):
-	case err != nil:
+	if use(ComponentSkills) {
+		skills, err := readSkills(dir, "skills")
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", p.Name, err)
+		}
+		p.Skills = skills
+	}
+	if use(ComponentHooks) {
+		var err error
+		if p.Hooks, err = readHooks(filepath.Join(dir, "akhook.yml")); err != nil {
+			return nil, fmt.Errorf("%s: akhook.yml: %w", p.Name, err)
+		}
+	}
+	if info, err := os.Stat(filepath.Join(dir, "setup")); err == nil {
+		if info.Mode()&0o111 == 0 {
+			return nil, fmt.Errorf("%s: setup is not executable", p.Name)
+		}
+		p.Setup = true
+	}
+	if err := p.check(); err != nil {
 		return nil, err
-	default:
-		p.Servers = mcp.Servers
 	}
+	return p, nil
+}
+
+// check checks the servers and collects their runtime variables.
+func (p *Plugin) check() error {
 	env := map[string]bool{}
 	for name, s := range p.Servers {
 		if !simpleRE.MatchString(name) {
-			return nil, fmt.Errorf("%s: server name %q", p.Name, name)
+			return fmt.Errorf("%s: server name %q", p.Name, name)
 		}
 		names, err := checkServer(s)
 		if err != nil {
-			return nil, fmt.Errorf("%s: server %s: %w", p.Name, name, err)
+			return fmt.Errorf("%s: server %s: %w", p.Name, name, err)
 		}
 		for _, n := range names {
 			env[n] = true
@@ -128,24 +182,7 @@ func Read(dir string) (*Plugin, error) {
 		p.RuntimeEnv = append(p.RuntimeEnv, n)
 	}
 	sort.Strings(p.RuntimeEnv)
-
-	skills, err := readSkills(filepath.Join(dir, "skills"))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", p.Name, err)
-	}
-	p.Skills = skills
-
-	if p.Hooks, err = readHooks(filepath.Join(dir, "akhook.yml")); err != nil {
-		return nil, fmt.Errorf("%s: akhook.yml: %w", p.Name, err)
-	}
-
-	if info, err := os.Stat(filepath.Join(dir, "setup")); err == nil {
-		if info.Mode()&0o111 == 0 {
-			return nil, fmt.Errorf("%s: setup is not executable", p.Name)
-		}
-		p.Setup = true
-	}
-	return p, nil
+	return nil
 }
 
 // checkServer checks where s uses variables and returns the runtime ones.
@@ -155,6 +192,9 @@ func Read(dir string) (*Plugin, error) {
 func checkServer(s Server) ([]string, error) {
 	if (s.Command == "") == (s.URL == "") {
 		return nil, errors.New("needs a command or a url")
+	}
+	if !slices.Contains([]string{"", "stdio", "http", "streamable-http"}, s.Type) {
+		return nil, fmt.Errorf("type %q is not supported (stdio or streamable HTTP)", s.Type)
 	}
 	onlyRoot := append([]string{s.Command, s.Cwd, s.URL}, s.Args...)
 	for _, text := range onlyRoot {
@@ -204,7 +244,13 @@ func checkServer(s Server) ([]string, error) {
 	return names, nil
 }
 
-func readSkills(dir string) ([]Skill, error) {
+// readSkills reads the skill directories under root/rel: rel is either
+// one skill (it holds a SKILL.md) or a directory of them.
+func readSkills(root, rel string) ([]Skill, error) {
+	dir := filepath.Join(root, filepath.FromSlash(rel))
+	if _, err := os.Stat(filepath.Join(dir, "SKILL.md")); err == nil {
+		return readSkill(root, rel)
+	}
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -214,20 +260,27 @@ func readSkills(dir string) ([]Skill, error) {
 	}
 	var out []Skill
 	for _, e := range entries {
-		if !e.IsDir() {
-			continue
+		if e.IsDir() {
+			skills, err := readSkill(root, path.Join(rel, e.Name()))
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, skills...)
 		}
-		if !simpleRE.MatchString(e.Name()) {
-			return nil, fmt.Errorf("skills/%s: directory names are letters, digits, _ and -", e.Name())
-		}
-		file := filepath.Join(dir, e.Name(), "SKILL.md")
-		name, err := skillName(file)
-		if err != nil {
-			return nil, fmt.Errorf("skills/%s: %w", e.Name(), err)
-		}
-		out = append(out, Skill{Dir: e.Name(), Name: name})
 	}
 	return out, nil
+}
+
+func readSkill(root, rel string) ([]Skill, error) {
+	name := path.Base(rel)
+	if !simpleRE.MatchString(name) {
+		return nil, fmt.Errorf("%s: directory names are letters, digits, _ and -", rel)
+	}
+	skill, err := skillName(filepath.Join(root, filepath.FromSlash(rel), "SKILL.md"))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", rel, err)
+	}
+	return []Skill{{Dir: name, Path: rel, Name: skill}}, nil
 }
 
 // skillName reads the name from SKILL.md's YAML frontmatter.

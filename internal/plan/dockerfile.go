@@ -115,7 +115,7 @@ func dockerfile(r spec.Resolved, plugins []*plugin.Plugin) (string, []string) {
 			w("    AXP_PLUGIN_CACHE=/var/cache/agent-plugins/%s AXP_PLUGIN_BIN=/usr/local/bin ./setup", p.Name)
 		}
 		for _, s := range p.Skills {
-			w("COPY plugins/%s/skills/%s %s", p.Name, s.Dir, plugin.SkillDest(p.Name, s))
+			w("COPY plugins/%s/%s %s", p.Name, s.Path, plugin.SkillDest(p.Name, s))
 		}
 		w("")
 	}

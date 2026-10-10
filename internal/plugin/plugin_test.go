@@ -35,7 +35,7 @@ var probe = map[string]string{
 func TestReadAndCompile(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "probe")
 	write(t, dir, probe)
-	p, err := Read(dir)
+	p, err := Read(dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestRejections(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "p")
 		write(t, dir, map[string]string{"plugin.json": `{"name":"p","version":"1","description":"d"}`})
 		write(t, dir, files)
-		if _, err := Read(dir); err == nil {
+		if _, err := Read(dir, nil); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
@@ -86,5 +86,50 @@ func TestCheckSetRejectsSkillClash(t *testing.T) {
 	b := &Plugin{Manifest: Manifest{Name: "b"}, Skills: []Skill{{Dir: "y", Name: "same"}}}
 	if err := CheckSet([]*Plugin{a, b}); err == nil {
 		t.Fatal("clash accepted")
+	}
+}
+
+func TestCursorPlugin(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "kit")
+	write(t, dir, map[string]string{
+		".cursor-plugin/plugin.json": `{"name":"kit","displayName":"Kit","version":"1.2.0","description":"d","author":{"name":"x"},
+			"skills":["./skills/","./extra/solo"],"agents":"./agents/",
+			"mcpServers":{"docs":{"type":"http","url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${DOCS_TOKEN}"}},
+			              "local":{"command":"node","args":["${CURSOR_PLUGIN_ROOT}/s.mjs"]}}}`,
+		"skills/one/SKILL.md": "---\nname: kit-one\ndescription: d\n---\n",
+		"skills/two/SKILL.md": "---\nname: kit-two\ndescription: d\n---\n",
+		"extra/solo/SKILL.md": "---\nname: kit-solo\ndescription: d\n---\n",
+		"agents/helper.md":    "---\nname: helper\n---\n",
+	})
+	if _, err := Read(dir, nil); err == nil || !strings.Contains(err.Error(), `add "agents" to the plugin's exclude`) {
+		t.Fatalf("agents without exclude: %v", err)
+	}
+	p, err := Read(dir, []string{"agents"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, s := range p.Skills {
+		paths = append(paths, s.Path+"="+s.Name)
+	}
+	if p.Format != "cursor" || strings.Join(paths, ",") != "skills/one=kit-one,skills/two=kit-two,extra/solo=kit-solo" || strings.Join(p.RuntimeEnv, ",") != "DOCS_TOKEN" {
+		t.Fatalf("%+v %v", p, paths)
+	}
+	cfg, err := CodexConfig([]*Plugin{p})
+	if err != nil || !strings.Contains(cfg, "/opt/agent/plugins/kit/s.mjs") || !strings.Contains(cfg, "bearer_token_env_var = 'DOCS_TOKEN'") {
+		t.Fatalf("%v\n%s", err, cfg)
+	}
+	if p, err := Read(dir, []string{"agents", "skills", "mcpServers"}); err != nil || len(p.Skills) != 0 || len(p.Servers) != 0 {
+		t.Fatalf("excluded: %+v %v", p, err)
+	}
+
+	write(t, dir, map[string]string{".cursor-plugin/plugin.json": `{"name":"kit","version":"1","mcpServers":"./mcp.json"}`,
+		"mcp.json": `{"mcpServers":{"crm":{"type":"http","url":"https://crm.example/mcp","auth":{"CLIENT_ID":"${CLIENT_ID}"}}}}`})
+	if _, err := Read(dir, []string{"agents"}); err == nil || !strings.Contains(err.Error(), "OAuth") {
+		t.Fatalf("oauth server: %v", err)
+	}
+	write(t, dir, map[string]string{".cursor-plugin/plugin.json": `{"name":"kit","version":"1","skills":"../outside"}`})
+	if _, err := Read(dir, []string{"agents"}); err == nil {
+		t.Fatal("skills path outside the plugin accepted")
 	}
 }

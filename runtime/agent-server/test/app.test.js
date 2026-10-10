@@ -141,3 +141,34 @@ test("validation and limits", async (t) => {
   assert.equal((await call("GET", `/v1/sessions/${id}/events?after=abc`)).status, 400);
   assert.equal((await call("GET", "/v1/sessions/nope")).status, 404);
 });
+
+test("provider: base URL and API key become a Codex model provider", async (t) => {
+  let seen;
+  const runtime = scriptedRuntime({ turn: async (turn) => turn.say("ok") });
+  const recording = { ...runtime, session: (inst, opts) => ((seen = opts), runtime.session(inst, opts)) };
+  const { app, close } = createAgentApi({ runtime: recording, installation: { kind: "available" }, manifest, cwd: process.cwd() });
+  t.after(close);
+  const post = (body) => app.request("/v1/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+  assert.equal((await post({ provider: { baseUrl: "https://llm.example/v1", apiKey: "k" } })).status, 400, "model required");
+  assert.equal((await post({ model: "m", provider: { baseUrl: "ftp://x", apiKey: "k" } })).status, 400);
+  assert.equal((await post({ model: "m", provider: { baseUrl: "https://llm.example/v1" } })).status, 400);
+  assert.equal((await post({ model: "m", provider: { baseUrl: "https://llm.example/v1", apiKey: "k", extra: 1 } })).status, 400);
+
+  const res = await post({ model: "m", env: { A: "1" }, provider: { baseUrl: "https://llm.example/v1", apiKey: "secret-key" } });
+  assert.equal(res.status, 201);
+  const body = await res.text();
+  assert.ok(!body.includes("secret-key"), "key in response");
+  assert.deepEqual(JSON.parse(body).provider, { baseUrl: "https://llm.example/v1" });
+  assert.deepEqual(seen.env, { A: "1", SAB_PROVIDER_API_KEY: "secret-key" });
+  assert.ok(!seen.launchArgs.join(" ").includes("secret-key"), "key in launch args");
+  assert.deepEqual(seen.launchArgs, [
+    "-c", 'model_provider="sab_provider"',
+    "-c", 'model_providers.sab_provider.name="llm.example"',
+    "-c", 'model_providers.sab_provider.base_url="https://llm.example/v1"',
+    "-c", 'model_providers.sab_provider.env_key="SAB_PROVIDER_API_KEY"',
+    "-c", 'model_providers.sab_provider.wire_api="responses"',
+  ]);
+  const list = await (await app.request("/v1/sessions")).text();
+  assert.ok(!list.includes("secret-key"));
+});

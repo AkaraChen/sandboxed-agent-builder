@@ -117,12 +117,12 @@ func (r *Resolver) Resolve(ctx context.Context, s spec.Spec) (spec.Resolved, err
 			return out, fmt.Errorf("plugins[%d]: %w", i, err)
 		}
 		dir := filepath.Join(repo, filepath.FromSlash(p.Path))
-		pl, err := plugin.Read(dir)
+		pl, err := plugin.Read(dir, p.Exclude)
 		if err != nil {
 			return out, invalid("plugins[%d]: %v", i, err)
 		}
 		rp := spec.ResolvedPlugin{
-			Name: pl.Name, Version: pl.Version, Source: p.Source, Revision: p.Revision, Commit: commit, Path: p.Path, Setup: pl.Setup, Hooks: plugin.HookEvents(pl),
+			Name: pl.Name, Version: pl.Version, Source: p.Source, Revision: p.Revision, Commit: commit, Path: p.Path, Format: pl.Format, Exclude: p.Exclude, Setup: pl.Setup, Hooks: plugin.HookEvents(pl),
 		}
 		for n := range pl.Servers {
 			rp.MCPServers = append(rp.MCPServers, plugin.ServerID(pl.Name, n))

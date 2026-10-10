@@ -8,7 +8,7 @@ import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import { promptAndWait, SessionNotFoundError, UnsupportedOptionError } from "@botiverse/oar";
 
-const OPEN_OPTIONS = ["cwd", "model", "effort", "serviceTier", "resume", "systemPrompt", "appendSystemPrompt", "env"];
+const OPEN_OPTIONS = ["cwd", "model", "effort", "serviceTier", "resume", "systemPrompt", "appendSystemPrompt", "env", "provider"];
 const WHEN = ["now", "after_turn", "when_idle"];
 
 function fail(status, code, message) {
@@ -23,6 +23,45 @@ async function body(c) {
   } catch {
     throw fail(400, "invalid_request", "the body must be a JSON object");
   }
+}
+
+// The Codex model provider a session's provider option defines. The key
+// reaches Codex only through this variable in the session's environment.
+const PROVIDER_ID = "sab_provider";
+const PROVIDER_KEY_ENV = "SAB_PROVIDER_API_KEY";
+
+/**
+ * codexProvider turns {baseUrl, apiKey} into Codex launch arguments (a
+ * custom model provider on the Responses API) and environment.
+ */
+export function codexProvider(provider) {
+  if (provider === null || typeof provider !== "object" || Array.isArray(provider)) {
+    throw fail(400, "invalid_request", "provider must be an object with baseUrl and apiKey");
+  }
+  const unknown = Object.keys(provider).filter((k) => k !== "baseUrl" && k !== "apiKey");
+  if (unknown.length) throw fail(400, "invalid_request", `provider: unknown fields: ${unknown.join(", ")}`);
+  let url;
+  try {
+    url = new URL(provider.baseUrl);
+  } catch {
+    url = null;
+  }
+  if (!url || (url.protocol !== "https:" && url.protocol !== "http:")) {
+    throw fail(400, "invalid_request", "provider.baseUrl must be an http(s) URL, e.g. https://api.example.com/v1");
+  }
+  if (typeof provider.apiKey !== "string" || provider.apiKey === "") throw fail(400, "invalid_request", "provider.apiKey is required");
+  // A JSON string is a valid TOML basic string.
+  const set = (key, value) => ["-c", `${key}=${JSON.stringify(value)}`];
+  return {
+    launchArgs: [
+      ...set("model_provider", PROVIDER_ID),
+      ...set(`model_providers.${PROVIDER_ID}.name`, url.host),
+      ...set(`model_providers.${PROVIDER_ID}.base_url`, provider.baseUrl),
+      ...set(`model_providers.${PROVIDER_ID}.env_key`, PROVIDER_KEY_ENV),
+      ...set(`model_providers.${PROVIDER_ID}.wire_api`, "responses"),
+    ],
+    env: { [PROVIDER_KEY_ENV]: provider.apiKey },
+  };
 }
 
 function control(outcome) {
@@ -56,6 +95,7 @@ export function createAgentApi({ runtime, installation, manifest, token, cwd = "
     sessionId: id,
     createdAt: entry.createdAt,
     cwd: entry.options.cwd,
+    provider: entry.provider,
     status: entry.session.status().value,
     model: entry.session.model().value,
     effort: entry.session.effort().value,
@@ -97,13 +137,23 @@ export function createAgentApi({ runtime, installation, manifest, token, cwd = "
     const unknown = Object.keys(req).filter((k) => !OPEN_OPTIONS.includes(k));
     if (unknown.length) throw fail(400, "invalid_request", `unknown fields: ${unknown.join(", ")}`);
     for (const k of OPEN_OPTIONS) {
-      if (k !== "env" && req[k] !== undefined && typeof req[k] !== "string") throw fail(400, "invalid_request", `${k} must be a string`);
+      if (k !== "env" && k !== "provider" && req[k] !== undefined && typeof req[k] !== "string") throw fail(400, "invalid_request", `${k} must be a string`);
     }
     if (req.env !== undefined && (typeof req.env !== "object" || Object.values(req.env).some((v) => v !== null && typeof v !== "string"))) {
       throw fail(400, "invalid_request", "env must map names to strings or null");
     }
+    let provider = null;
+    const { provider: providerReq, ...rest } = req;
+    const options = { ...rest, cwd: req.cwd ?? cwd };
+    if (providerReq !== undefined) {
+      if (manifest.agent?.type !== "codex") throw fail(400, "unsupported_option", "provider is supported for Codex only");
+      if (typeof req.model !== "string" || req.model === "") throw fail(400, "invalid_request", "model is required with provider (the provider's model id)");
+      const { launchArgs, env } = codexProvider(providerReq);
+      options.launchArgs = launchArgs;
+      options.env = { ...req.env, ...env };
+      provider = { baseUrl: providerReq.baseUrl };
+    }
     if (sessions.size + opening >= maxSessions) throw fail(429, "too_many_sessions", `at most ${maxSessions} sessions; close one first`);
-    const options = { ...req, cwd: req.cwd ?? cwd };
     opening++;
     let session;
     try {
@@ -115,7 +165,8 @@ export function createAgentApi({ runtime, installation, manifest, token, cwd = "
     } finally {
       opening--;
     }
-    const entry = { session, createdAt: new Date().toISOString(), options, events: [], dropped: 0, listeners: new Set() };
+    // Only the working directory is kept: env may hold the provider key.
+    const entry = { session, createdAt: new Date().toISOString(), options: { cwd: options.cwd }, provider, events: [], dropped: 0, listeners: new Set() };
     entry.unsubscribe = session.events((event) => {
       entry.events.push(event);
       if (entry.events.length > maxEvents) {

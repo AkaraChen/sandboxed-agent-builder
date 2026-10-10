@@ -49,6 +49,8 @@ docker run --rm \
 
 ## 插件映射
 
+两种插件格式都支持：Agent Plugin（`plugin.json`，下表）和 Cursor 插件（`.cursor-plugin/plugin.json`）。Cursor 插件的 `skills` 路径（目录或单个 skill）、`mcpServers`（文件路径、内联对象或二者组成的列表，`${CURSOR_PLUGIN_ROOT}` 等同 `${PLUGIN_ROOT}`）按下表编译；需要 OAuth 交互的 MCP 服务器（`auth`）会被拒绝；agents、commands、rules、Cursor hooks 必须通过构建规格的 `exclude` 排除。
+
 | Agent Plugin | 镜像中的原生形式 |
 | --- | --- |
 | `mcp.json` stdio 服务器 | `[mcp_servers.<plugin>_<server>]`：`command`/`args`/`cwd`/静态 `env`；`${VAR}` 整值透传为 `env_vars`，名称不同时经 `sh -c 'export NAME="$VAR"; exec …'` 改名 |

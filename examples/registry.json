@@ -1,0 +1,16 @@
+{
+  "spec": {
+    "scripts": {
+      "build": [
+        {
+          "name": "jq",
+          "run": "apt-get update && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*"
+        }
+      ]
+    },
+    "output": {
+      "type": "registry",
+      "repository": "agents/minimal"
+    }
+  }
+}

@@ -52,7 +52,7 @@ POST /v1/sessions
 {"model": "gpt-6.1-sol", "effort": "high", "cwd": "/workspace", "appendSystemPrompt": "Run the tests before you finish."}
 ```
 
-可选字段与 oar `SessionOptions` 一致：`cwd`、`model`、`effort`、`serviceTier`、`resume`、`systemPrompt`、`appendSystemPrompt`、`env`。未知字段返回 400。`resume` 填之前的 `sessionId`（Codex 的 thread id），用来接着原会话继续；会话历史保存在 `$CODEX_HOME`，所以要跨容器恢复，调用方需要持久化 `/home/agent/.codex`。
+可选字段与 oar `SessionOptions` 一致：`cwd`、`model`、`effort`、`serviceTier`、`resume`、`systemPrompt`、`appendSystemPrompt`、`env`，另加 `provider`（见下节）。未知字段返回 400。`resume` 填之前的 `sessionId`（Codex 的 thread id），用来接着原会话继续；会话历史保存在 `$CODEX_HOME`，所以要跨容器恢复，调用方需要持久化 `/home/agent/.codex`。
 
 | 状态码 | code | 含义 |
 | --- | --- | --- |
@@ -61,6 +61,27 @@ POST /v1/sessions
 | 404 | `resume_not_found` | 找不到要恢复的会话 |
 | 429 | `too_many_sessions` | 已达 `AGENT_API_MAX_SESSIONS` |
 | 502 | `open_failed` | agent 进程启动失败，例如未登录 |
+
+### 模型服务
+
+打开会话时可以直接指定 Codex 使用的模型服务，不需要镜像里有 Codex 登录：
+
+```json
+POST /v1/sessions
+{"model": "gpt-6-astra", "provider": {"baseUrl": "https://llm.example.com/v1", "apiKey": "sk-..."}}
+```
+
+- **前提**：`baseUrl` 必须是支持 OpenAI Responses API 的地址（`POST {baseUrl}/responses`），Codex 只走这个接口。`model` 必填，填该服务的模型 id。
+- **实现方式**：服务在启动 Codex 时追加一组配置，定义一个名为 `sab_provider` 的自定义 provider：
+  ```
+  -c model_provider="sab_provider"
+  -c model_providers.sab_provider.base_url="<baseUrl>"
+  -c model_providers.sab_provider.env_key="SAB_PROVIDER_API_KEY"
+  -c model_providers.sab_provider.wire_api="responses"
+  ```
+- **key 的去向**：`apiKey` 只放进该会话 Codex 进程的环境变量 `SAB_PROVIDER_API_KEY`，不进入启动参数、oar 记录、事件、会话列表或任何响应。会话信息里只回显 `provider.baseUrl`。
+- **作用范围**：每个会话可以用不同的服务和 key；不带 `provider` 时，仍使用容器里的 Codex 登录（`CODEX_AUTH_JSON_FILE` / `OPENAI_API_KEY`）。
+- **限制**：目前只对 Codex 生效，其他 agent 类型返回 400 `unsupported_option`。`resume` 一个会话时要再传一次 `provider`，因为它不会被保存。
 
 ### 发送输入
 
