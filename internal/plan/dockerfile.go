@@ -56,7 +56,7 @@ const (
 )
 
 func dockerfile(r spec.Resolved, plugins []*plugin.Plugin) (string, []string) {
-	codex := r.Agent.Codex // Write checked the agent is Codex.
+	codex := r.Codex
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
