@@ -1,0 +1,111 @@
+package plan
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/akarachen/sandboxed-agent-builder/internal/spec"
+)
+
+type dirFetcher string
+
+func (d dirFetcher) Fetch(_, _ string) (string, error) { return string(d), nil }
+
+func TestWrite(t *testing.T) {
+	repo := t.TempDir()
+	pdir := filepath.Join(repo, "plugins", "probe")
+	os.MkdirAll(filepath.Join(pdir, "skills", "one"), 0o755)
+	os.WriteFile(filepath.Join(pdir, "plugin.json"), []byte(`{"$schema":"https://agent-plugins.org/schemas/1.1.0/plugin.schema.json","name":"probe","version":"1"}`), 0o644)
+	os.WriteFile(filepath.Join(pdir, "skills", "one", "SKILL.md"), []byte("---\nname: one\ndescription: d\n---\n"), 0o644)
+
+	r := spec.Resolved{
+		Contract: 1, Platform: "linux/amd64",
+		Base:    spec.ResolvedImage{Family: spec.FamilyDebianSlim, Version: "trixie", Image: "docker.io/library/debian:trixie-slim", Digest: "sha256:base"},
+		Node:    spec.ResolvedNode{Version: "24.1.0", URL: "https://nodejs.org/dist/v24.1.0/node.tar.gz", SHA256: "abc"},
+		Codex:   spec.ResolvedPackage{Package: "@openai/codex-sdk", Version: "1.2.3"},
+		Akhook:  spec.ResolvedAkhook{Repository: "https://github.com/aghub-app/akhook", Commit: strings.Repeat("a", 40), Toolchain: spec.ResolvedImage{Image: "rust:1-alpine", Digest: "sha256:rust"}},
+		Plugins: []spec.ResolvedPlugin{{Name: "probe", Source: "https://x", Commit: strings.Repeat("b", 40), Path: "plugins/probe"}},
+		Scripts: spec.Scripts{
+			Build:   []spec.Script{{Name: "first", Run: "echo 1"}, {Name: "second", Run: "echo 2", Secrets: []string{"npm"}}},
+			Startup: []spec.Script{{Name: "Prepare workspace!", Run: "echo start"}},
+		},
+	}
+	dir := t.TempDir()
+	p, err := Write(r, dirFetcher(repo), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	df := p.Dockerfile
+	// One RUN per build script, in order, the secret only on its own step.
+	i1 := strings.Index(df, "source=build/001.sh")
+	i2 := strings.Index(df, "source=build/002.sh")
+	if i1 < 0 || i2 < i1 || strings.Count(df, "--mount=type=secret,id=npm") != 1 || strings.Index(df, "id=npm") < i2 {
+		t.Fatalf("build scripts:\n%s", df)
+	}
+	// Startup scripts are copied, never run.
+	if !strings.Contains(df, "COPY agent/startup /opt/agent/startup") || strings.Contains(df, "001-prepare-workspace.sh") {
+		t.Fatalf("startup:\n%s", df)
+	}
+	for _, want := range []string{"FROM docker.io/library/debian:trixie-slim@sha256:base", "@openai/codex-sdk@1.2.3", "ln -s /opt/agent/server/node_modules/.bin/codex /usr/local/bin/codex",
+		"ADD --checksum=sha256:abc", "COPY plugins/probe /opt/agent/plugins/probe", "COPY plugins/probe/skills/one /etc/codex/skills/probe--one",
+		"RUN mkdir -p /var/lib/agent-plugins/probe && chown agent:agent /var/lib/agent-plugins/probe",
+		`ENTRYPOINT ["/usr/local/bin/agent-entrypoint"]`, "USER agent",
+		"COPY agent-server /opt/agent/server", `CMD ["serve"]`, "EXPOSE 8080"} {
+		if !strings.Contains(df, want) {
+			t.Errorf("Dockerfile lacks %q", want)
+		}
+	}
+	if strings.Index(df, "COPY plugins/probe ") > i1 {
+		t.Error("plugins must come before build scripts")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "agent/startup/001-prepare-workspace.sh")); !strings.Contains(string(b), "echo start") {
+		t.Fatalf("startup file: %q", b)
+	}
+	for _, f := range []string{"agent-server/package.json", "agent-server/package-lock.json", "agent-server/src/app.js", "agent-server/src/main.js"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Errorf("context lacks %s", f)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "agent-server/node_modules")); err == nil {
+		t.Error("node_modules leaked into the context")
+	}
+	if strings.Join(p.Secrets, ",") != "npm" {
+		t.Fatalf("secrets %v", p.Secrets)
+	}
+
+}
+
+// TestEntrypoint runs the generated entrypoint with a stub codex: startup
+// scripts run in order before codex, and a failing one stops the container.
+func TestEntrypoint(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	os.MkdirAll(bin, 0o755)
+	os.WriteFile(filepath.Join(bin, "codex"), []byte("#!/bin/sh\necho \"codex $*\"\n"), 0o755)
+	script := strings.ReplaceAll(entrypoint, "/opt/agent/startup", filepath.Join(root, "startup"))
+	os.WriteFile(filepath.Join(root, "entrypoint"), []byte(script), 0o755)
+	os.MkdirAll(filepath.Join(root, "startup"), 0o755)
+	os.WriteFile(filepath.Join(root, "startup", "001-a.sh"), []byte("echo first\n"), 0o755)
+	os.WriteFile(filepath.Join(root, "startup", "002-b.sh"), []byte("echo second\n"), 0o755)
+	run := func() (string, error) {
+		cmd := exec.Command(filepath.Join(root, "entrypoint"), "exec", "hi")
+		cmd.Env = []string{"PATH=" + bin + ":/usr/bin:/bin", "HOME=" + root}
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	out, err := run()
+	if err != nil || strings.Index(out, "first") > strings.Index(out, "second") || !strings.HasSuffix(strings.TrimSpace(out), "codex exec hi") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	os.WriteFile(filepath.Join(root, "startup", "002-b.sh"), []byte("exit 3\n"), 0o755)
+	out, err = run()
+	if err == nil || strings.Contains(out, "codex exec") || !strings.Contains(out, "Codex was not started") {
+		t.Fatalf("failing startup: %v\n%s", err, out)
+	}
+}

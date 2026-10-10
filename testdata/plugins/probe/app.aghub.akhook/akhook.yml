@@ -1,0 +1,17 @@
+version: 1
+rules:
+  - id: remember-prompt
+    on: prompt_submit
+    run:
+      argv: [node, "${PLUGIN_ROOT}/hooks/context.mjs"]
+      timeout_ms: 5000
+  - id: record-stop
+    on: stop
+    run:
+      argv: [sh, -c, "cat > /tmp/probe-stop.json"]
+      timeout_ms: 5000
+  - id: no-forbidden
+    on: shell_exec
+    checks:
+      - argv: [touch, forbidden.txt]
+    message: The probe plugin forbids creating forbidden.txt.

@@ -6,7 +6,25 @@
 
 ## 当前阶段
 
-架构设计阶段，尚未实现可运行服务。设计依据为 AXP 任务 #43，采用干净架构。
+Go + chi 实现的可运行服务，采用干净架构；PostgreSQL 持久化（goose 迁移），经 Docker socket 使用 daemon 内置的 BuildKit 构建，可选内置 Distribution registry。验证记录见 [docs/verification.md](docs/verification.md)。
+
+## 运行
+
+需要 Go 1.26、git、Docker（BuildKit 随 Docker daemon 提供）和 PostgreSQL 17+。
+
+```sh
+go build -o builder ./cmd/builder
+printf %s "$TOKEN" | sha256sum   # 填入配置 auth.callers[].tokenSha256
+./builder serve -config deploy/builder.example.yaml
+```
+
+容器部署见 [deploy/compose.yaml](deploy/compose.yaml)（挂载 Docker socket 等同于宿主机 root 权限，只在可信环境运行）。
+
+```sh
+go vet ./... && go test -race ./...                       # 数据库测试用 SAB_TEST_DATABASE_URL，未设置时自动启动 sab-test-postgres 容器
+go test -race -tags docker ./internal/adapter/docker   # 需要 Docker
+cd runtime/agent-server && ni && nr test                # 镜像内控制 API（Node.js 24）
+```
 
 ## 职责
 
@@ -17,18 +35,24 @@
 
 AXP 保存 Agent 环境配置和构建参数，关联 `buildId` 与镜像结果，负责容器运行、重启、工作区和会话。builder 的交付物是镜像。
 
-服务由 API、构建 worker、数据库和 Docker 执行适配组成。oar 安装在产物镜像中，由调用方运行；builder 不运行 Agent。
+服务由 API、构建 worker、数据库和 Docker 执行适配组成。产物镜像里装有 Codex，还带一个 Hono 写的控制 API（基于官方 Codex SDK），调用方通过它在容器里管理 Codex 会话；builder 本身不运行 Agent。
 
 ## 产品选择
 
-- 基础镜像只选官方 Alpine、Debian slim 和完整 Debian；默认 Debian slim，Alpine 经过兼容性验证后开放。不使用 Ubuntu。
-- Agent runtime 只支持 Codex，通过构建时最新稳定版 oar 驱动，记录实际解析版本。
-- 兼容 Agent Plugin 的 hook、MCP 和 skill；hook 的 runtime 适配贡献给 akhook 上游。
+- 基础镜像只选官方 Debian slim（默认）和完整 Debian，不提供 Alpine 和 Ubuntu。
+- 只支持 Codex：版本在提交时锁定（`latest` 或精确版本），由镜像内的控制 API 通过官方 SDK 驱动。
+- 插件采用 [Agent Plugins](https://agent-plugins.org) 标准：skill 和 MCP 编译为 Codex 原生配置；hook 通过扩展目录 `app.aghub.akhook/` 交给 akhook 执行。
 - 支持逐项生成 RUN 步骤的 build 脚本，以及打包到镜像、启动时执行的 startup 脚本。
-- 默认交付本地 Docker 镜像；规划可选的内置 Distribution registry。
+- 默认交付本地 Docker 镜像；可选内置 Distribution registry，推送确认后交付 `repository@digest`。
 
 ## 文档
 
+- [API](docs/api.md)
+- [镜像运行契约](docs/runtime-contract.md)
+- [镜像内的 Agent 控制 API](docs/agent-api.md)
+- [验证记录](docs/verification.md)
+- [抽象消融记录](docs/ablation.md)
+- [示例](examples/README.md)：最小构建、registry 输出、Go + GitHub 官方插件
 - [架构与构建生命周期](docs/architecture.md)
 - [设计交付与实现顺序](docs/roadmap.md)
 - [构建参数、产物与插件计划](docs/build-contract.md)
@@ -36,6 +60,4 @@ AXP 保存 Agent 环境配置和构建参数，关联 `buildId` 与镜像结果�
 ## 相关项目
 
 - [AXP](https://github.com/AkaraChen/axp)
-- [oar](https://github.com/botiverse/oar)
 
-实现语言、数据库选型及部署拓扑尚待设计评审确定。

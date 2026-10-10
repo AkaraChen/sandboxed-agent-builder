@@ -1,0 +1,22 @@
+{
+  "name": "@sandboxed-agent-builder/agent-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HTTP control API for Codex inside a sandboxed-agent-builder image (Hono over @openai/codex-sdk).",
+  "type": "module",
+  "packageManager": "npm@11.19.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.4",
+    "hono": "4.13.13"
+  },
+  "devDependencies": {
+    "@openai/codex-sdk": "0.162.1"
+  }
+}
