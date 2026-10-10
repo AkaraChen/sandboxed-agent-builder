@@ -43,9 +43,10 @@ type Worker struct {
 	Fetch     plan.Fetcher
 	Executor  Executor
 	Publisher Publisher // nil without a registry
-	Secrets   Secrets
-	Config    WorkerConfig
-	Log       *slog.Logger
+	// Secrets are the build secret values by id, never stored.
+	Secrets map[string][]byte
+	Config  WorkerConfig
+	Log     *slog.Logger
 }
 
 var (
@@ -240,9 +241,9 @@ func (w *Worker) run(ctx context.Context, c *Claim, sink *logSink) domain.Outcom
 	}
 	secrets := map[string][]byte{}
 	for _, id := range p.Secrets {
-		v, err := w.Secrets.Get(id)
-		if err != nil {
-			return fail(domain.StagePlan, domain.CodePlanFailed, fmt.Errorf("build secret %s: %w", id, err), nil)
+		v, ok := w.Secrets[id]
+		if !ok {
+			return fail(domain.StagePlan, domain.CodePlanFailed, fmt.Errorf("build secret %s is not configured", id), nil)
 		}
 		secrets[id] = v
 	}
@@ -275,12 +276,9 @@ func (w *Worker) run(ctx context.Context, c *Claim, sink *logSink) domain.Outcom
 }
 
 // redactor replaces configured secret values in log text.
-func redactor(s Secrets) func(string) string {
-	if s == nil {
-		return func(t string) string { return t }
-	}
+func redactor(secrets map[string][]byte) func(string) string {
 	var values []string
-	for _, v := range s.Values() {
+	for _, v := range secrets {
 		v = bytes.TrimSpace(v)
 		if len(v) >= 4 {
 			values = append(values, string(v))

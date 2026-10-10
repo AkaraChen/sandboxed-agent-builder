@@ -17,10 +17,12 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -178,9 +180,12 @@ func serve(log *slog.Logger, args []string) error {
 		publisher = &registry.Publisher{Config: rc, Pusher: daemon, HTTP: httpClient}
 	}
 
-	secrets := c.Secrets()
+	secrets, err := c.LoadSecrets()
+	if err != nil {
+		return err
+	}
 	policy := spec.Policy{
-		Platforms: []string{platform}, AlpineVerified: c.AlpineVerified, Secrets: secrets.IDs(),
+		Platforms: []string{platform}, AlpineVerified: c.AlpineVerified, Secrets: slices.Sorted(maps.Keys(secrets)),
 		Registry: c.Registry.Enabled, PluginSource: git.Allowed,
 	}
 	resolver := &resolve.Resolver{

@@ -119,10 +119,3 @@ type Publisher interface {
 	// Find returns the manifest under repository:tag, if there is one.
 	Find(ctx context.Context, repository, tag string) (*Published, error)
 }
-
-// Secrets gives build secret values by id.
-type Secrets interface {
-	Get(id string) ([]byte, error)
-	// Values lists every configured secret value, for redaction.
-	Values() [][]byte
-}

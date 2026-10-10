@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -139,41 +138,24 @@ func Load(path string) (*Config, error) {
 	return c, nil
 }
 
-// Secrets reads build secrets from the environment or files on use.
-type Secrets struct{ c *Config }
-
-func (c *Config) Secrets() Secrets { return Secrets{c} }
-
-func (s Secrets) IDs() []string {
-	var out []string
-	for id := range s.c.BuildSecrets {
-		out = append(out, id)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func (s Secrets) Get(id string) ([]byte, error) {
-	src, ok := s.c.BuildSecrets[id]
-	if !ok {
-		return nil, fmt.Errorf("not configured")
-	}
-	if src.Env != "" {
-		v, ok := os.LookupEnv(src.Env)
-		if !ok {
-			return nil, fmt.Errorf("environment variable %s is not set", src.Env)
+// LoadSecrets reads every build secret now, so a missing one stops the
+// builder at start; changed values take effect on restart.
+func (c *Config) LoadSecrets() (map[string][]byte, error) {
+	out := map[string][]byte{}
+	for id, src := range c.BuildSecrets {
+		if src.Env != "" {
+			v, ok := os.LookupEnv(src.Env)
+			if !ok {
+				return nil, fmt.Errorf("buildSecrets.%s: environment variable %s is not set", id, src.Env)
+			}
+			out[id] = []byte(v)
+			continue
 		}
-		return []byte(v), nil
-	}
-	return os.ReadFile(src.File)
-}
-
-func (s Secrets) Values() [][]byte {
-	var out [][]byte
-	for _, id := range s.IDs() {
-		if v, err := s.Get(id); err == nil && len(v) > 0 {
-			out = append(out, v)
+		v, err := os.ReadFile(src.File)
+		if err != nil {
+			return nil, fmt.Errorf("buildSecrets.%s: %w", id, err)
 		}
+		out[id] = v
 	}
-	return out
+	return out, nil
 }

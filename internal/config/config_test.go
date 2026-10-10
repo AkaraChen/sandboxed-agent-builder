@@ -14,7 +14,7 @@ func TestExampleLoads(t *testing.T) {
 		t.Fatalf("%+v", c)
 	}
 	t.Setenv("NPM_TOKEN", "tok-value")
-	if v, err := c.Secrets().Get("npm_token"); err != nil || string(v) != "tok-value" {
-		t.Fatalf("%q %v", v, err)
+	if s, err := c.LoadSecrets(); err != nil || string(s["npm_token"]) != "tok-value" {
+		t.Fatalf("%q %v", s, err)
 	}
 }

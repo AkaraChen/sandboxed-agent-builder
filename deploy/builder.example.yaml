@@ -23,7 +23,8 @@ auth:
   # anonymousCaller: dev   # local development only
 
 # Build secrets scripts may mount (scripts.build[].secrets). Values are read
-# when an attempt runs and never stored in the database, image or logs.
+# when the builder starts (a missing one stops it; changes need a restart)
+# and are never stored in the database, image or logs.
 buildSecrets:
   npm_token:
     env: NPM_TOKEN

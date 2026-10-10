@@ -70,24 +70,6 @@ func (p *publisher) Find(_ context.Context, repo, tag string) (*app.Published, e
 	return p.found[repo+":"+tag], nil
 }
 
-type secrets map[string]string
-
-func (s secrets) Get(id string) ([]byte, error) {
-	v, ok := s[id]
-	if !ok {
-		return nil, errors.New("missing")
-	}
-	return []byte(v), nil
-}
-
-func (s secrets) Values() [][]byte {
-	var out [][]byte
-	for _, v := range s {
-		out = append(out, []byte(v))
-	}
-	return out
-}
-
 type env struct {
 	store    *sqlite.Store
 	service  *app.Service
@@ -113,7 +95,7 @@ func setup(t *testing.T) *env {
 	policy := spec.Policy{Platforms: []string{"linux/amd64"}, Secrets: []string{"tok"}, Registry: true, PluginSource: func(string) bool { return true }}
 	e.service = &app.Service{Store: store, Resolver: e.resolver, Policy: func() spec.Policy { return policy }, Log: log}
 	e.worker = &app.Worker{
-		Store: store, Executor: e.exec, Publisher: e.pub, Secrets: secrets{"tok": "very-secret-token"}, Log: log,
+		Store: store, Executor: e.exec, Publisher: e.pub, Secrets: map[string][]byte{"tok": []byte("very-secret-token")}, Log: log,
 		Config: app.WorkerConfig{ID: "w1", Concurrency: 1, Poll: 10 * time.Millisecond, Lease: 3 * time.Second, WorkDir: t.TempDir(), MaxLogBytes: 1 << 20, Grace: time.Second},
 	}
 	return e
