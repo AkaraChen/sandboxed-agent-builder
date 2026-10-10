@@ -51,6 +51,7 @@ AXP 保存 Agent 环境配置和构建参数，关联 `buildId` 与镜像结果�
 - [镜像运行契约](docs/runtime-contract.md)
 - [镜像内的 Agent 控制 API](docs/agent-api.md)
 - [验证记录](docs/verification.md)
+- [抽象消融记录](docs/ablation.md)
 - [架构与构建生命周期](docs/architecture.md)
 - [设计交付与实现顺序](docs/roadmap.md)
 - [构建参数、产物与插件计划](docs/build-contract.md)

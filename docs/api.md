@@ -63,7 +63,7 @@
 
 服务先检查幂等键：
 
-- 新键：校验 → 解析并锁定（基础镜像 digest、Node.js 版本与 sha256、Codex/oar 版本、akhook 提交、插件提交与内容摘要）→ 持久化 → **202**，`Location: /builds/{id}`。持久化之后客户端断开不影响构建。
+- 新键：校验 → 解析并锁定（基础镜像 digest、Node.js 版本与 sha256、Codex/oar 版本、akhook 提交、插件提交）→ 持久化 → **202**，`Location: /builds/{id}`。持久化之后客户端断开不影响构建。
 - 同键同内容（JSON 规范化后比较，键序与空白无关）：**200** 返回原构建，`Idempotent-Replayed: true`，不再解析。
 - 同键不同内容：**409**。
 - 同一规格换新键：新构建（规格摘要相同，重新解析 latest）。

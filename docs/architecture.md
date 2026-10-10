@@ -127,7 +127,7 @@ oar 是产物中的 runtime 驱动依赖，builder 不通过它开启会话。oa
 ```text
 cmd/builder                 composition root：配置、OTel、装配；serve / registry-gc
 internal/domain             Build、Attempt、状态与转换、Failure、Artifact、错误
-internal/app                用例（Service）、Worker、Reconciler、日志批量写入；端口：Store、Resolver、Planner、Executor、Publisher、Secrets、Clock、IDs
+internal/app                用例（Service）、Worker（含重启核对）、日志写入；端口：Store、Resolver、Executor、Publisher
 internal/spec               请求规格、默认值与校验（Policy）、锁定规格 Resolved、规范化哈希
 internal/plugin             Agent Plugin 读取与校验，编译为 Codex 原生配置与 akhook 规则
 internal/plan               构建上下文与 Dockerfile 生成、镜像入口脚本
@@ -140,7 +140,7 @@ internal/adapter/gitsource  git CLI 拉取并锁定插件提交
 internal/config             配置文件与 build secret 来源
 ```
 
-依赖方向：`api`、`adapter/*` → `app` → `spec`、`domain`。领域与应用层不引用 Docker、SQL 或 HTTP 类型。
+依赖方向：`api`、`adapter/*` → `app` → `plan`、`spec`、`domain`。领域与应用层不引用 Docker、SQL 或 HTTP 类型。构建计划是只依赖 `Fetcher` 的纯函数，由 worker 直接调用。端口只保留在确实有第二种实现（测试替身或可替换的外部系统）的地方，取舍见 [ablation.md](ablation.md)。
 
 ### 数据库选型
 
@@ -156,8 +156,8 @@ internal/config             配置文件与 build secret 来源
 
 - worker 在事务中把最早的 queued 尝试改为 running，代次加一，租约默认 30 秒，每 10 秒续期；续期同时取回取消请求。所有写入（日志、结果）都以 (attempt, worker, generation) 为条件，过期 worker 的写入返回 `ErrStaleLease` 并放弃。
 - 构建经 Docker socket 劫持 `/grpc`、`/session` 连接 daemon 内置的 BuildKit（与 buildx docker driver 相同），用 moby exporter 写入 daemon 镜像库。每个尝试有专属 tag `sandboxed-agent-builder/<buildId>:<attemptId>` 和 build/attempt label。取消即取消 Solve 的 context；BuildKit 在客户端会话结束时停止构建，`Build` 在 Solve 返回后才返回。
-- 核对器定期（每个租约周期）接管租约过期的 running 尝试（代次加一，挡住旧 worker），在 daemon 中查该尝试的 tag 与 label，registry 模式再 `HEAD` manifest：确认则补录成功（`recovered`），否则 `interrupted`，等待显式重试。daemon 查询失败时不做判断，下一轮再试。
-- 优雅关闭：停止领取，等待宽限期，然后停止仍在运行的构建并记为 interrupted。
+- worker 定期（每个租约周期）接管租约过期的 running 尝试（代次加一，挡住旧 worker），在 daemon 中查该尝试的 tag 与 label，registry 模式再 `HEAD` manifest：确认则补录成功（`recovered`），否则 `interrupted`，等待显式重试。daemon 查询失败时不做判断，下一轮再试。
+- 关闭：停止领取，立即停止仍在运行的构建并记为 interrupted；进程被强杀时由重启后的核对处理。
 
 ### registry
 
@@ -166,7 +166,7 @@ internal/config             配置文件与 build secret 来源
 ### 其他决策
 
 - worker 并发默认 2；租约 30 秒；日志每尝试 8 MiB；轮询间隔建议 2 秒（`Retry-After`）。
-- 临时凭据：build secret 由运维在配置中声明来源（环境变量或文件），规格只引用 ID，执行时经 BuildKit session 提供，值在日志入库前脱敏，不进入数据库、规格或镜像层。运行凭据由调用方在启动容器时注入，见[运行契约](runtime-contract.md)。
+- 临时凭据：build secret 由运维在配置中声明来源（环境变量或文件），规格只引用 ID，在 builder 启动时读入（缺失即启动失败，变更需重启），执行时经 BuildKit session 提供，值在日志入库前脱敏，不进入数据库、规格或镜像层。运行凭据由调用方在启动容器时注入，见[运行契约](runtime-contract.md)。
 - OTel：设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 时导出 trace，每个尝试一个 `build.attempt` span，属性 `build.id`、`build.attempt.id`、`build.attempt.number`、`build.spec_digest`；结构化日志同样带 `build_id`、`attempt_id`。
 - 认证：静态 bearer token（配置中保存 sha256），一个 token 一个调用方作用域。
 
