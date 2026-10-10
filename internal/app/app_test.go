@@ -26,7 +26,6 @@ func (r *resolver) Resolve(_ context.Context, s spec.Spec) (spec.Resolved, error
 		Contract: 1, Platform: s.Platform, Scripts: s.Scripts, Output: s.Output,
 		Base:  spec.ResolvedImage{Family: s.Base.Family, Version: s.Base.Version, Image: "debian", Digest: "sha256:base"},
 		Agent: spec.ResolvedAgent{Type: s.Agent.Type, Codex: &spec.ResolvedPackage{Package: "@openai/codex", Version: s.Agent.Codex.Version}},
-		Oar:   spec.ResolvedPackage{Package: "@botiverse/oar-cli", Version: "0.51.0"},
 	}, nil
 }
 

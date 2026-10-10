@@ -2,7 +2,7 @@
 // the files it copies. The image is assembled in a fixed order so earlier
 // layers stay cached when later inputs change:
 //
-//	base system → Node.js → akhook → Codex and oar → entrypoint and managed
+//	base system → Node.js → akhook → Codex and the control API → entrypoint and managed
 //	hooks → one layer per plugin (sorted by name) → plugin configuration →
 //	one RUN per build script → startup scripts and metadata
 package plan
@@ -133,7 +133,6 @@ type ImageManifest struct {
 	Base       spec.ResolvedImage    `json:"base"`
 	Node       string                `json:"node"`
 	Agent      spec.ResolvedAgent    `json:"agent"`
-	Oar        string                `json:"oar"`
 	Akhook     string                `json:"akhook"`
 	Plugins    []spec.ResolvedPlugin `json:"plugins"`
 	Startup    []string              `json:"startup"`
@@ -154,7 +153,7 @@ const ControlAPIPort = 8080
 func Manifest(r spec.Resolved) ImageManifest {
 	m := ImageManifest{
 		Contract: Contract, Platform: r.Platform, Base: r.Base,
-		Node: r.Node.Version, Agent: r.Agent, Oar: r.Oar.Version, Akhook: r.Akhook.Commit,
+		Node: r.Node.Version, Agent: r.Agent, Akhook: r.Akhook.Commit,
 		Plugins: r.Plugins, RuntimeEnv: r.RuntimeEnv, Startup: []string{},
 		ControlAPI: ControlAPI{Version: 1, Port: ControlAPIPort},
 	}

@@ -1,9 +1,9 @@
 // Entry of the agent control API: `agent-entrypoint serve` runs this after
 // the startup scripts. Configuration is environment variables only
 // (docs/agent-api.md).
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { serve } from "@hono/node-server";
-import { defaultRuntimes } from "@botiverse/oar";
 import { createAgentApi } from "./app.js";
 
 const env = process.env;
@@ -13,18 +13,19 @@ if (!token && env.AGENT_API_INSECURE !== "1") {
   console.error("agent api: set AGENT_API_TOKEN (or AGENT_API_INSECURE=1 on a trusted network)");
   process.exit(64);
 }
-
-const runtime = defaultRuntimes.require(manifest.agent.type);
-const installation = await runtime.installation?.();
-if (installation?.kind !== "available") {
-  console.error(`agent api: ${manifest.agent.type} is not installed`, installation);
+const codexPath = env.AGENT_CODEX_PATH ?? "/usr/local/bin/codex";
+let version;
+try {
+  version = execFileSync(codexPath, ["--version"], { encoding: "utf8" }).trim();
+} catch (err) {
+  console.error(`agent api: ${codexPath} does not run`, err.message);
   process.exit(69);
 }
 
 const { app, close } = createAgentApi({
-  runtime,
-  installation,
+  codexPath,
   manifest,
+  version,
   token,
   cwd: env.AGENT_API_CWD ?? "/workspace",
   maxSessions: Number(env.AGENT_API_MAX_SESSIONS ?? 4),
@@ -33,7 +34,7 @@ const { app, close } = createAgentApi({
 const port = Number(env.AGENT_API_PORT ?? 8080);
 const hostname = env.AGENT_API_HOST ?? "0.0.0.0";
 const server = serve({ fetch: app.fetch, port, hostname }, () => {
-  console.error(`agent api: ${manifest.agent.type} ${installation.version ?? ""} on http://${hostname}:${port}`);
+  console.error(`agent api: ${version} on http://${hostname}:${port}`);
 });
 
 let stopping = false;

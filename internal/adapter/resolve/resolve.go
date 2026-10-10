@@ -30,8 +30,9 @@ type ImageDigester interface {
 }
 
 const (
-	CodexPackage = "@openai/codex"
-	OarPackage   = "@botiverse/oar-cli"
+	// CodexPackage is the Codex SDK; each of its versions depends on the
+	// @openai/codex CLI of the same version, so it locks both.
+	CodexPackage = "@openai/codex-sdk"
 )
 
 type Resolver struct {
@@ -84,9 +85,6 @@ func (r *Resolver) Resolve(ctx context.Context, s spec.Spec) (spec.Resolved, err
 		out.Agent = spec.ResolvedAgent{Type: spec.AgentCodex, Codex: &codex}
 	default:
 		return out, invalid("agent.type: %q is not supported", s.Agent.Type)
-	}
-	if out.Oar, err = r.npm(ctx, OarPackage, s.Oar.Version); err != nil {
-		return out, err
 	}
 
 	commit, err := r.Git.ResolveRevision(ctx, r.AkhookRepo, r.AkhookRef)
@@ -172,8 +170,7 @@ func (r *Resolver) get(ctx context.Context, u string, accept string) ([]byte, er
 
 var errNotFound = errors.New("not found")
 
-// npm locks a package version: "latest" and "latest-stable" take the
-// latest dist-tag, which must be a stable (non-prerelease) version.
+// npm locks a package version: "latest" takes the latest dist-tag, which must be a stable (non-prerelease) version.
 func (r *Resolver) npm(ctx context.Context, pkg, want string) (spec.ResolvedPackage, error) {
 	body, err := r.get(ctx, r.NPMRegistry+"/"+strings.Replace(url.PathEscape(pkg), "%40", "@", 1), "application/vnd.npm.install-v1+json")
 	if err != nil {
@@ -187,7 +184,7 @@ func (r *Resolver) npm(ctx context.Context, pkg, want string) (spec.ResolvedPack
 		return spec.ResolvedPackage{}, fmt.Errorf("npm %s: %w", pkg, err)
 	}
 	version := want
-	if want == spec.Latest || want == spec.LatestStable {
+	if want == spec.Latest {
 		version = meta.DistTags["latest"]
 		if version == "" || strings.Contains(version, "-") {
 			return spec.ResolvedPackage{}, fmt.Errorf("npm %s: latest dist-tag %q is not a stable version", pkg, version)

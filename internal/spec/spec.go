@@ -35,8 +35,7 @@ const AgentCodex = "codex"
 
 // Version policies.
 const (
-	Latest       = "latest"
-	LatestStable = "latest-stable"
+	Latest = "latest"
 )
 
 // Request is the body of POST /builds.
@@ -53,7 +52,6 @@ type Spec struct {
 	Platform string   `json:"platform,omitempty"`
 	Node     Version  `json:"node"`
 	Agent    Agent    `json:"agent"`
-	Oar      Version  `json:"oar"`
 	Plugins  []Plugin `json:"plugins,omitempty"`
 	Scripts  Scripts  `json:"scripts"`
 	Output   Output   `json:"output"`
@@ -64,7 +62,7 @@ type Base struct {
 	Version string `json:"version,omitempty"`
 }
 
-// Agent is the agent runtime the image runs (through oar). Type selects
+// Agent is the agent runtime the image runs. Type selects
 // the runtime; the field named like the type holds its configuration, and
 // the others must be unset.
 type Agent struct {
@@ -171,7 +169,7 @@ func (s *Spec) Normalize(p Policy) error {
 	if !nodeLine.MatchString(s.Node.Version) {
 		add("node.version: %q is not a major line (24) or an exact version", s.Node.Version)
 	} else if major, _ := strconv.Atoi(strings.SplitN(s.Node.Version, ".", 2)[0]); major < 24 {
-		add("node.version: oar needs Node.js 24 or later")
+		add("node.version: Node.js 24 or later")
 	}
 	if s.Agent.Type == "" {
 		s.Agent.Type = AgentCodex
@@ -189,12 +187,6 @@ func (s *Spec) Normalize(p Policy) error {
 		}
 	default:
 		add("agent.type: %q is not supported; the only agent type is %q", s.Agent.Type, AgentCodex)
-	}
-	if s.Oar.Version == "" {
-		s.Oar.Version = LatestStable
-	}
-	if s.Oar.Version != LatestStable && !semver.MatchString(s.Oar.Version) {
-		add("oar.version: %q is not %q or an exact version", s.Oar.Version, LatestStable)
 	}
 
 	if len(s.Plugins) > maxPlugins {
@@ -287,7 +279,6 @@ type Resolved struct {
 	Base     ResolvedImage    `json:"base"`
 	Node     ResolvedNode     `json:"node"`
 	Agent    ResolvedAgent    `json:"agent"`
-	Oar      ResolvedPackage  `json:"oar"`
 	Akhook   ResolvedAkhook   `json:"akhook"`
 	Plugins  []ResolvedPlugin `json:"plugins"`
 	Scripts  Scripts          `json:"scripts"`

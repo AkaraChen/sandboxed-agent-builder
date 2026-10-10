@@ -16,7 +16,7 @@ func TestDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if s.Base.Family != FamilyDebianSlim || s.Base.Version != "trixie" || s.Platform != "linux/amd64" ||
-		s.Node.Version != "24" || s.Agent.Type != AgentCodex || s.Agent.Codex.Version != Latest || s.Oar.Version != LatestStable || s.Output.Type != OutputLocal {
+		s.Node.Version != "24" || s.Agent.Type != AgentCodex || s.Agent.Codex.Version != Latest || s.Output.Type != OutputLocal {
 		t.Fatalf("%+v", s)
 	}
 }

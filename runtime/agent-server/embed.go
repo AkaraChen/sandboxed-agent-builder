@@ -1,4 +1,4 @@
-// Package agentserver embeds the agent control API (Hono over oar) that
+// Package agentserver embeds the agent control API (Hono over @openai/codex-sdk) that
 // every image carries at /opt/agent/server; see docs/agent-api.md.
 package agentserver
 

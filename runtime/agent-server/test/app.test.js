@@ -1,18 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scriptedRuntime } from "@botiverse/oar/testing";
+import { fileURLToPath } from "node:url";
 import { createAgentApi } from "../src/app.js";
 
-const manifest = { contract: 1, agent: { type: "codex", codex: { package: "@openai/codex", version: "0.0.0" } }, oar: "0.52.0" };
+const codexPath = fileURLToPath(new URL("../fixtures/fake-codex.mjs", import.meta.url));
+const manifest = { contract: 1, codex: { package: "@openai/codex-sdk", version: "0.0.0" } };
 
-function setup(turn, extra = {}) {
-  const runtime = scriptedRuntime({
-    turn: turn ?? (async (t) => {
-      await t.tool("shell", "ls", () => "a.txt");
-      t.say(`echo: ${t.input}`);
-    }),
-  });
-  const { app, close } = createAgentApi({ runtime, installation: { kind: "available", version: "test" }, manifest, token: "tok", cwd: process.cwd(), ...extra });
+function setup(extra = {}) {
+  const { app, close } = createAgentApi({ codexPath, manifest, version: "codex-cli test", token: "tok", cwd: process.cwd(), ...extra });
   const call = async (method, path, body, headers = {}) => {
     const res = await app.request(path, {
       method,
@@ -23,82 +18,101 @@ function setup(turn, extra = {}) {
     const text = await res.text();
     let json;
     try { json = JSON.parse(text); } catch { json = text; }
-    return { status: res.status, json, res };
+    return { status: res.status, json, text };
   };
   return { app, close, call };
 }
+
+const waitIdle = async (call, id) => {
+  for (let i = 0; i < 100; i++) {
+    const s = (await call("GET", `/v1/sessions/${id}`)).json;
+    if (s.status === "idle" && s.lastTurn) return s;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  throw new Error("turn did not end");
+};
 
 test("auth and agent info", async (t) => {
   const { app, call, close } = setup();
   t.after(close);
   assert.equal((await app.request("/v1/agent")).status, 401);
   assert.equal((await app.request("/healthz")).status, 200);
-  const { status, json } = await call("GET", "/v1/agent");
-  assert.equal(status, 200);
-  assert.equal(json.agent.type, "codex");
-  assert.equal(json.installation.version, "test");
+  const { json } = await call("GET", "/v1/agent");
+  assert.equal(json.version, "codex-cli test");
+  assert.equal(json.codex.version, "0.0.0");
 });
 
-test("session: prompt and wait, events, input while idle, delete", async (t) => {
+test("a session runs turns, keeps events and resumes its thread", async (t) => {
   const { call, close } = setup();
   t.after(close);
-  const open = await call("POST", "/v1/sessions", { model: "scripted-1" });
-  assert.equal(open.status, 201, JSON.stringify(open.json));
+  const open = await call("POST", "/v1/sessions", { model: "m" });
+  assert.equal(open.status, 201);
+  assert.equal(open.json.threadId, null);
   const id = open.json.sessionId;
-  assert.equal(open.json.status.kind, "idle");
 
-  const run = await call("POST", `/v1/sessions/${id}/input`, { text: "hello", wait: true, timeoutMs: 10_000 });
-  assert.equal(run.status, 200, JSON.stringify(run.json));
-  assert.equal(run.json.kind, "ended");
-  assert.equal(run.json.outcome.kind, "completed");
-  assert.equal(run.json.text, "echo: hello");
+  const run = await call("POST", `/v1/sessions/${id}/input`, { text: "hello", wait: true });
+  assert.equal(run.status, 200);
+  assert.equal(run.json.kind, "completed");
+  assert.equal(run.json.finalResponse, "echo: hello");
+  assert.equal(run.json.usage.output_tokens, 2);
 
-  const events = await call("GET", `/v1/sessions/${id}/events?after=-1`);
-  const kinds = events.json.items.map((e) => e.kind);
-  for (const k of ["turn_started", "tool_call_started", "tool_call_ended", "text_delta", "turn_ended"]) assert.ok(kinds.includes(k), `${k} in ${kinds}`);
-  const page = await call("GET", `/v1/sessions/${id}/events?after=${events.json.items[1].seq}&limit=1`);
-  assert.equal(page.json.items.length, 1);
-  assert.equal(page.json.items[0].seq, events.json.items[2].seq);
+  const s = (await call("GET", `/v1/sessions/${id}`)).json;
+  assert.match(s.threadId, /^thread-/);
+  const events = (await call("GET", `/v1/sessions/${id}/events`)).json.items;
+  assert.deepEqual(events.map((e) => e.type), ["thread.started", "turn.started", "item.completed", "turn.completed", "turn.ended"]);
+  const page = (await call("GET", `/v1/sessions/${id}/events?after=2&limit=1`)).json;
+  assert.deepEqual(page.items.map((e) => e.seq), [3]);
 
-  const delivered = await call("POST", `/v1/sessions/${id}/input`, { text: "again" });
-  assert.equal(delivered.status, 202);
-  assert.equal(delivered.json.landed, "prompted");
+  // The second turn resumes the same thread.
+  const again = await call("POST", `/v1/sessions/${id}/input`, { text: "env", wait: true });
+  assert.match(again.json.finalResponse, new RegExp(`resumed=${s.threadId}`));
 
-  const list = await call("GET", "/v1/sessions");
-  assert.equal(list.json.items.length, 1);
+  // Another session can resume it by id.
+  const other = (await call("POST", "/v1/sessions", { resume: s.threadId })).json;
+  assert.equal(other.threadId, s.threadId);
   assert.equal((await call("DELETE", `/v1/sessions/${id}`)).status, 204);
   assert.equal((await call("GET", `/v1/sessions/${id}`)).status, 404);
 });
 
-test("abort a running turn and steer into it", async (t) => {
-  let release;
-  const { call, close } = setup(async (turn) => {
-    await new Promise((resolve) => {
-      release = resolve;
-      turn.signal.addEventListener("abort", resolve);
-    });
-    turn.say(`steered: ${turn.steered.join(",")}`);
-  });
+test("async input, busy, abort and failure", async (t) => {
+  const { call, close } = setup();
   t.after(close);
   const id = (await call("POST", "/v1/sessions", {})).json.sessionId;
-  assert.equal((await call("POST", `/v1/sessions/${id}/input`, { text: "long job" })).json.landed, "prompted");
-  const busy = await call("POST", `/v1/sessions/${id}/input`, { text: "x", wait: true });
-  assert.equal(busy.status, 409);
-  const steer = await call("POST", `/v1/sessions/${id}/input`, { text: "also this", when: "now" });
-  assert.equal(steer.status, 202);
-  assert.equal(steer.json.landed, "steered");
-  const abort = await call("POST", `/v1/sessions/${id}/abort`);
-  assert.equal(abort.status, 200, JSON.stringify(abort.json));
-  for (let i = 0; i < 50; i++) {
-    const s = await call("GET", `/v1/sessions/${id}`);
-    if (s.json.status.kind === "idle") {
-      assert.equal(s.json.status.lastTurnOutcome.kind, "aborted");
-      return;
-    }
-    await new Promise((r) => setTimeout(r, 20));
+  assert.equal((await call("POST", `/v1/sessions/${id}/input`, { text: "slow" })).status, 202);
+  assert.equal((await call("POST", `/v1/sessions/${id}/input`, { text: "x" })).json.error.code, "busy");
+  assert.equal((await call("GET", `/v1/sessions/${id}`)).json.status, "running");
+  const aborted = await call("POST", `/v1/sessions/${id}/abort`);
+  assert.equal(aborted.json.kind, "aborted");
+  assert.equal((await call("POST", `/v1/sessions/${id}/abort`)).status, 409);
+
+  const failed = await call("POST", `/v1/sessions/${id}/input`, { text: "fail", wait: true });
+  assert.equal(failed.json.kind, "failed");
+  assert.match(failed.json.error, /boom/);
+
+  const timeout = await call("POST", `/v1/sessions/${id}/input`, { text: "slow", wait: true, timeoutMs: 50 });
+  assert.equal(timeout.status, 202);
+  assert.equal(timeout.json.kind, "timeout");
+  await call("POST", `/v1/sessions/${id}/abort`);
+  await waitIdle(call, id);
+});
+
+test("provider and env reach this session's Codex only, never a response", async (t) => {
+  const { call, close } = setup();
+  t.after(close);
+  assert.equal((await call("POST", "/v1/sessions", { provider: { baseUrl: "https://llm.example/v1", apiKey: "k" } })).status, 400, "model required");
+  assert.equal((await call("POST", "/v1/sessions", { model: "m", provider: { baseUrl: "ftp://x", apiKey: "k" } })).status, 400);
+  const open = await call("POST", "/v1/sessions", { model: "m", env: { MCP_TOKEN_X: "gh-token" }, provider: { baseUrl: "https://llm.example/v1", apiKey: "secret-key" } });
+  assert.equal(open.status, 201);
+  assert.ok(!open.text.includes("secret-key"));
+  assert.deepEqual(open.json.provider, { baseUrl: "https://llm.example/v1" });
+  const run = await call("POST", `/v1/sessions/${open.json.sessionId}/input`, { text: "env", wait: true });
+  assert.match(run.json.finalResponse, /base="https:\/\/llm.example\/v1" key=set token=gh-token model=m/);
+  const plain = (await call("POST", "/v1/sessions", {})).json.sessionId;
+  const other = await call("POST", `/v1/sessions/${plain}/input`, { text: "env", wait: true });
+  assert.match(other.json.finalResponse, /base=none key=unset token=unset/);
+  for (const path of ["/v1/sessions", `/v1/sessions/${open.json.sessionId}/events`]) {
+    assert.ok(!(await call("GET", path)).text.includes("secret-key"), path);
   }
-  assert.fail("turn did not end after abort");
-  release?.();
 });
 
 test("SSE replays from Last-Event-ID and streams live events", async (t) => {
@@ -106,13 +120,10 @@ test("SSE replays from Last-Event-ID and streams live events", async (t) => {
   t.after(close);
   const id = (await call("POST", "/v1/sessions", {})).json.sessionId;
   await call("POST", `/v1/sessions/${id}/input`, { text: "one", wait: true });
-  const all = (await call("GET", `/v1/sessions/${id}/events`)).json.items;
-  const from = all[1].seq;
-  const { res } = await call("GET", `/v1/sessions/${id}/events/stream`, undefined, { "Last-Event-ID": String(from) });
-  assert.equal(res.headers.get("content-type"), "text/event-stream");
+  const { res } = await call("GET", `/v1/sessions/${id}/events/stream`, undefined, { "Last-Event-ID": "2" });
   const reader = res.body.getReader();
-  let text = "";
   const decoder = new TextDecoder();
+  let text = "";
   const read = async (until) => {
     while (!until(text)) {
       const { value, done } = await reader.read();
@@ -120,55 +131,22 @@ test("SSE replays from Last-Event-ID and streams live events", async (t) => {
       text += decoder.decode(value);
     }
   };
-  await read((s) => s.includes(`id: ${all[all.length - 1].seq}`));
-  assert.ok(!text.includes(`id: ${from}\n`), "replayed the Last-Event-ID event itself");
-  assert.ok(text.includes(`id: ${all[2].seq}`));
+  await read((s) => s.includes("id: 5"));
+  assert.ok(!text.includes("id: 2\n") && text.includes("id: 3"));
   await call("POST", `/v1/sessions/${id}/input`, { text: "two", wait: true });
   await read((s) => s.includes("echo: two"));
-  assert.ok(text.includes("event: turn_ended"));
+  assert.ok(text.includes("event: turn.completed"));
   await reader.cancel();
 });
 
 test("validation and limits", async (t) => {
-  const { call, close } = setup(undefined, { maxSessions: 1 });
+  const { call, close } = setup({ maxSessions: 1 });
   t.after(close);
   assert.equal((await call("POST", "/v1/sessions", { bogus: 1 })).status, 400);
-  assert.equal((await call("POST", "/v1/sessions", { model: 3 })).status, 400);
+  assert.equal((await call("POST", "/v1/sessions", { effort: "huge" })).status, 400);
   const id = (await call("POST", "/v1/sessions", {})).json.sessionId;
   assert.equal((await call("POST", "/v1/sessions", {})).status, 429);
   assert.equal((await call("POST", `/v1/sessions/${id}/input`, {})).status, 400);
-  assert.equal((await call("POST", `/v1/sessions/${id}/input`, { text: "x", when: "later" })).status, 400);
-  assert.equal((await call("GET", `/v1/sessions/${id}/events?after=abc`)).status, 400);
+  assert.equal((await call("GET", `/v1/sessions/${id}/events?after=-1`)).status, 400);
   assert.equal((await call("GET", "/v1/sessions/nope")).status, 404);
-});
-
-test("provider: base URL and API key become a Codex model provider", async (t) => {
-  let seen;
-  const runtime = scriptedRuntime({ turn: async (turn) => turn.say("ok") });
-  const recording = { ...runtime, session: (inst, opts) => ((seen = opts), runtime.session(inst, opts)) };
-  const { app, close } = createAgentApi({ runtime: recording, installation: { kind: "available" }, manifest, cwd: process.cwd() });
-  t.after(close);
-  const post = (body) => app.request("/v1/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-
-  assert.equal((await post({ provider: { baseUrl: "https://llm.example/v1", apiKey: "k" } })).status, 400, "model required");
-  assert.equal((await post({ model: "m", provider: { baseUrl: "ftp://x", apiKey: "k" } })).status, 400);
-  assert.equal((await post({ model: "m", provider: { baseUrl: "https://llm.example/v1" } })).status, 400);
-  assert.equal((await post({ model: "m", provider: { baseUrl: "https://llm.example/v1", apiKey: "k", extra: 1 } })).status, 400);
-
-  const res = await post({ model: "m", env: { A: "1" }, provider: { baseUrl: "https://llm.example/v1", apiKey: "secret-key" } });
-  assert.equal(res.status, 201);
-  const body = await res.text();
-  assert.ok(!body.includes("secret-key"), "key in response");
-  assert.deepEqual(JSON.parse(body).provider, { baseUrl: "https://llm.example/v1" });
-  assert.deepEqual(seen.env, { A: "1", SAB_PROVIDER_API_KEY: "secret-key" });
-  assert.ok(!seen.launchArgs.join(" ").includes("secret-key"), "key in launch args");
-  assert.deepEqual(seen.launchArgs, [
-    "-c", 'model_provider="sab_provider"',
-    "-c", 'model_providers.sab_provider.name="llm.example"',
-    "-c", 'model_providers.sab_provider.base_url="https://llm.example/v1"',
-    "-c", 'model_providers.sab_provider.env_key="SAB_PROVIDER_API_KEY"',
-    "-c", 'model_providers.sab_provider.wire_api="responses"',
-  ]);
-  const list = await (await app.request("/v1/sessions")).text();
-  assert.ok(!list.includes("secret-key"));
 });

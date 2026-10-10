@@ -15,7 +15,7 @@ func upstream(t *testing.T, latest string) *Resolver {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/npm/", func(w http.ResponseWriter, r *http.Request) {
 		// npm takes the scoped name with an escaped slash.
-		if r.URL.EscapedPath() != "/npm/@botiverse%2Foar-cli" {
+		if r.URL.EscapedPath() != "/npm/@openai%2Fcodex-sdk" {
 			http.NotFound(w, r)
 			return
 		}
@@ -35,17 +35,17 @@ func upstream(t *testing.T, latest string) *Resolver {
 func TestNPM(t *testing.T) {
 	ctx := context.Background()
 	r := upstream(t, "0.51.0")
-	if p, err := r.npm(ctx, OarPackage, spec.LatestStable); err != nil || p.Version != "0.51.0" {
+	if p, err := r.npm(ctx, CodexPackage, spec.Latest); err != nil || p.Version != "0.51.0" {
 		t.Fatalf("%+v %v", p, err)
 	}
-	if p, err := r.npm(ctx, OarPackage, "0.50.0"); err != nil || p.Version != "0.50.0" {
+	if p, err := r.npm(ctx, CodexPackage, "0.50.0"); err != nil || p.Version != "0.50.0" {
 		t.Fatalf("exact: %+v %v", p, err)
 	}
 	var se *domain.SpecError
-	if _, err := r.npm(ctx, OarPackage, "9.9.9"); !errors.As(err, &se) {
+	if _, err := r.npm(ctx, CodexPackage, "9.9.9"); !errors.As(err, &se) {
 		t.Fatalf("unpublished: %v", err)
 	}
-	if _, err := upstream(t, "0.52.0-rc.1").npm(ctx, OarPackage, spec.LatestStable); err == nil {
+	if _, err := upstream(t, "0.52.0-rc.1").npm(ctx, CodexPackage, spec.Latest); err == nil {
 		t.Fatal("prerelease latest accepted as stable")
 	}
 }
