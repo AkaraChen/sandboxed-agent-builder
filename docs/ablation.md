@@ -66,3 +66,34 @@
 - MCP 中的运行时变量改名包装（标准只展开 `${PLUGIN_ROOT}`/`${PLUGIN_DATA}`，认证交给客户端，因此改为 `MCP_TOKEN_*` 的 bearer token）。
 
 生产代码从 4063 行变为 3996 行。
+
+## 第二轮：去掉 oar，只支持 Codex
+
+评审决定不再使用 oar，只支持 Codex，并要求再做一轮消融。方法同第一轮：每次去掉一层，跑完整检查，统计生产代码行数（Go + 控制 API 的 JS），每项单独提交。
+
+| 编号 | 改动 | 生产行数 | 结论与依据 |
+| --- | --- | --- | --- |
+| B1 | 去掉 oar：镜像不再安装 oar CLI/库，规格、解析和 manifest 去掉 oar 版本，入口改为 `exec codex`；控制 API 改用官方 `@openai/codex-sdk` | −36 | 只剩一种 runtime，多 runtime 驱动层不再需要。SDK 与 CLI 同版本，且依赖同版本 `@openai/codex`，一个锁定版本同时管住两者。provider 直接走 SDK 自带的 `baseUrl`/`apiKey`（key 只进 `CODEX_API_KEY`）。随之去掉的 oar 能力：一轮中途 steer 或排队输入（`codex exec` 不支持），以及模型列表 |
+| B2 | 规格的 `agent: {type, codex}` 收回为 `codex` | −33 | 这一层是为扩展多个 runtime 留的；只支持 Codex 后，类型分派没有第二个分支。解析结果和镜像 manifest 同步改为 `codex` |
+| B3 | 去掉 `node.version` 配置 | −23 | Node.js 只是控制 API 和 Codex 启动器的内部依赖，固定用 24 线最新版，仍然锁定版本和 sha256。解析从两次请求减为一次 |
+
+另外修了两个改写中暴露的缺陷：
+- 失败轮次的错误信息原来会被 `codex exec` 的退出码覆盖，现在保留。
+- SSE 推送时，在写出期间到达的事件原来要等 15 秒才发出，现在立即发出。
+
+评估后仍保留的（理由同第一轮）：
+- Store、Executor、Publisher、Resolver 端口。删掉 Store 接口约省 35 行，但应用层会直接依赖 pgx，并要把 Claim 等类型挪进 domain，违反任务要求的数据库 adapter 分层；另外三个端口是测试替身所需。
+- `Outcome.Validate` 等领域不变量。
+- 内置 registry、`noCache`、可配置的上游地址。
+
+| | 生产代码 | 测试代码 |
+| --- | --- | --- |
+| 本轮前（`854ce32`） | 3996 | 1470 |
+| 本轮后 | 3904 | 1430 |
+
+### 本轮的真实验证
+
+- **probe 插件镜像**（不含 oar）构建成功，镜像里的 `codex` 链接到 SDK 带来的 `@openai/codex` 0.162.1。
+- **`scripts/smoke-image.sh`**（改用 `codex exec --json`）全部通过：`MCP=MAGIC-data-ok-static-ok SKILL=KUMQUAT-7 HOOK=ZEBRA-42 TOUCH=blocked`，两个生命周期 hook 都执行了。Codex 日志中有 `Command blocked by PreToolUse hook: akhook [probe/no-forbidden]`，说明 managed hooks 在 `codex exec` 下同样生效。
+- **`examples/go-github/run.sh`**：控制 API 通过 SDK 以 OOMOL 的服务（`provider`）驱动 Codex，GitHub MCP 的 token 经会话 `env` 传入。Codex 查到 `github/github-mcp-server` 的最新版本 `v2.0.2`，写出 Go 代码，`go test -race` 通过；两种凭据在日志中都出现 0 次。
+- **构建过程中修复的问题**：镜像里第一次构建失败，原因是 `npm install --omit=dev` 把作为 devDependency 声明的 SDK 跳过了；去掉 `--omit=dev` 后通过。

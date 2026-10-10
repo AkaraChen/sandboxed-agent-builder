@@ -17,9 +17,9 @@ bcurl() {
 }
 
 echo "submitting the build"
-build=$(bcurl -X POST "$BUILDER/builds" -H "Idempotency-Key: go-github-$(date +%Y%m%d)" -d @"$here/build.json")
+build=$(bcurl -X POST "$BUILDER/builds" -H "Idempotency-Key: go-github-$(date +%Y%m%d%H%M)" -d @"$here/build.json")
 id=$(printf %s "$build" | jq -r .buildId)
-echo "build $id; resolved: $(printf %s "$build" | jq -c '.resolvedSpec | {base: "\(.base.image)@\(.base.digest)", node: .node.version, codex: .agent.codex.version, oar: .oar.version, plugins: [.plugins[] | {name, specVersion, commit, mcpServers, warnings}], runtimeEnv}')"
+echo "build $id; resolved: $(printf %s "$build" | jq -c '.resolvedSpec | {base: "\(.base.image)@\(.base.digest)", node: .node.version, codex: .codex.version, plugins: [.plugins[] | {name, specVersion, commit, mcpServers, warnings}], runtimeEnv}')"
 
 after=0
 while :; do
@@ -51,5 +51,5 @@ echo "session $session"
 
 prompt='Use the GitHub MCP tools to find the latest release of the github/github-mcp-server repository. Then in /workspace create a Go module "demo" with a function LatestRelease() string returning that tag, and a test that checks it looks like vMAJOR.MINOR.PATCH. Run `go test -race ./...` and report the tag and the test result in one line.'
 jq -n --arg text "$prompt" '{text: $text, wait: true, timeoutMs: 900000}' |
-  curl -fsS -X POST "$api/v1/sessions/$session/input" -H "$h" -d @- | jq -r '.outcome.kind, .text'
+  curl -fsS -X POST "$api/v1/sessions/$session/input" -H "$h" -d @- | jq -r '.kind, .finalResponse'
 docker exec "$container" sh -c 'cd /workspace && ls && go test ./...'

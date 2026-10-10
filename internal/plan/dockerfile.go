@@ -91,7 +91,7 @@ func dockerfile(r spec.Resolved, plugins []*plugin.Plugin) (string, []string) {
 	w("# the SDK depends on exactly that @openai/codex).")
 	w("COPY agent-server /opt/agent/server")
 	w("RUN cd /opt/agent/server && npm ci --omit=dev --no-fund --no-audit \\")
-	w("    && npm install --no-save --omit=dev --no-fund --no-audit %s@%s && npm cache clean --force \\", codex.Package, codex.Version)
+	w("    && npm install --no-save --no-fund --no-audit %s@%s && npm cache clean --force \\", codex.Package, codex.Version)
 	w("    && ln -s /opt/agent/server/node_modules/.bin/codex /usr/local/bin/codex \\")
 	w("    && test \"$(codex --version)\" = \"codex-cli %s\" \\", codex.Version)
 	w("    && node -e \"import('/opt/agent/server/src/app.js')\" && rm -rf /tmp/node-compile-cache")

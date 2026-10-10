@@ -35,12 +35,12 @@ cd runtime/agent-server && ni && nr test                # 镜像内控制 API（
 
 AXP 保存 Agent 环境配置和构建参数，关联 `buildId` 与镜像结果，负责容器运行、重启、工作区和会话。builder 的交付物是镜像。
 
-服务由 API、构建 worker、数据库和 Docker 执行适配组成。产物镜像里装有 oar，还带一个 Hono 写的控制 API，调用方通过它在容器里管理 agent 会话；builder 本身不运行 Agent。
+服务由 API、构建 worker、数据库和 Docker 执行适配组成。产物镜像里装有 Codex，还带一个 Hono 写的控制 API（基于官方 Codex SDK），调用方通过它在容器里管理 Codex 会话；builder 本身不运行 Agent。
 
 ## 产品选择
 
 - 基础镜像只选官方 Debian slim（默认）和完整 Debian，不提供 Alpine 和 Ubuntu。
-- Agent runtime 只支持 Codex，通过构建时最新稳定版 oar 驱动，记录实际解析版本。
+- 只支持 Codex：版本在提交时锁定（`latest` 或精确版本），由镜像内的控制 API 通过官方 SDK 驱动。
 - 插件采用 [Agent Plugins](https://agent-plugins.org) 标准：skill 和 MCP 编译为 Codex 原生配置；hook 通过扩展目录 `app.aghub.akhook/` 交给 akhook 执行。
 - 支持逐项生成 RUN 步骤的 build 脚本，以及打包到镜像、启动时执行的 startup 脚本。
 - 默认交付本地 Docker 镜像；可选内置 Distribution registry，推送确认后交付 `repository@digest`。
@@ -60,5 +60,4 @@ AXP 保存 Agent 环境配置和构建参数，关联 `buildId` 与镜像结果�
 ## 相关项目
 
 - [AXP](https://github.com/AkaraChen/axp)
-- [oar](https://github.com/botiverse/oar)
 

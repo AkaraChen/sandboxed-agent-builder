@@ -52,15 +52,15 @@ flowchart TD
 
 ## 构建规格与镜像组装
 
-规格包含基础镜像、runtime/oar 版本、插件来源与版本、用户构建脚本、目标平台，以及可选输出方式。调用方的模型和指令只有在影响镜像内容时才作为构建输入。
+规格包含基础镜像、Codex 版本、插件来源与版本、用户构建脚本、目标平台，以及可选输出方式。调用方的模型和指令只有在影响镜像内容时才作为构建输入。
 
-具体产品选择和字段计划见 [构建契约](build-contract.md)：只支持 Codex；基础镜像为官方 Debian slim/完整 Debian（不提供 Alpine）；oar 新构建采用最新稳定版并锁定；build/startup 脚本分别定义。hook 兼容贡献到 akhook 上游。
+具体产品选择和字段计划见 [构建契约](build-contract.md)：只支持 Codex；基础镜像为官方 Debian slim/完整 Debian（不提供 Alpine）；Codex 新构建采用最新稳定版并锁定；build/startup 脚本分别定义。hook 兼容贡献到 akhook 上游。
 
-基础系统与运行入口/oar → runtime → 按稳定顺序排列的插件安装步骤 → 用户构建脚本。
+基础系统 → Node.js 与 akhook → Codex 与控制 API → 按稳定顺序排列的插件 → 用户构建脚本。
 
 每个插件组织独立 layer，利用 BuildKit 缓存；前面的 layer 改动会使后续缓存失效。相同输入和平台可以复用缓存或已有产物，但强制重建的语义需明确。
 
-锁定基础镜像 digest、runtime/oar 版本及插件内容。脚本下载的依赖也需锁定才能承诺可复现。记录原始请求与解析后的实际输入，缓存命中不代替来源记录。
+锁定基础镜像 digest、Codex 版本及插件内容。脚本下载的依赖也需锁定才能承诺可复现。记录原始请求与解析后的实际输入，缓存命中不代替来源记录。
 
 启动脚本可以作为文件打包进镜像，实际执行由调用方的启动入口负责。builder 不提供启动脚本执行、工作区挂载或运行时凭据注入接口。
 
@@ -105,11 +105,9 @@ API 客户端断开不会取消已持久化的构建。worker 与 Docker 连接�
 
 调用方提交后轮询状态和日志，成功后保存镜像引用，自行部署。轮询断开后可继续查询，无需 builder 向 AXP 主动回调。正式契约需明确认证、调用方隔离、错误码、分页上限、日志保留及建议轮询间隔。
 
-## oar 与插件
+## Codex 与插件
 
-oar 是产物中的 runtime 驱动依赖，builder 不通过它开启会话。oar 不提供通用插件安装标准；插件组装需要生成所选 runtime 的原生配置。
-
-提供构建支持的 runtime/插件兼容矩阵，无法满足的配置明确拒绝。运行时 hooks、审批、会话恢复需由调用方和产物集成验证；不因镜像构建成功就承诺这些能力可用。现有 AXP plugins-go 可评估复用，插件定义不重复复制进 prompt。
+产物只支持 Codex，镜像内的控制 API 通过官方 `@openai/codex-sdk` 驱动它（见 [agent-api.md](agent-api.md)）；builder 自己不运行 Agent。插件按 [Agent Plugins](https://agent-plugins.org) 标准编译为 Codex 原生配置，hook 由 akhook 执行（见[运行契约](runtime-contract.md#插件映射)）。最初的设计曾经通过 oar 驱动 Codex，按评审意见已移除，记录见 [ablation.md](ablation.md)。
 
 ## 实现（Go + chi）
 

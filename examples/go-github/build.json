@@ -4,11 +4,8 @@
       "family": "debian-slim",
       "version": "trixie"
     },
-    "agent": {
-      "type": "codex",
-      "codex": {
-        "version": "latest"
-      }
+    "codex": {
+      "version": "latest"
     },
     "plugins": [
       {

@@ -1,5 +1,7 @@
 # 验证记录
 
+> 后续变更：镜像已不再包含 oar（只支持 Codex，控制 API 改用 `@openai/codex-sdk`）。下文凡是经 `oar run` 或 oar 库得到的结果，都是当时的记录；去掉 oar 之后的验证见 [ablation.md](ablation.md#本轮的真实验证)。
+
 2026-10-10 在 linux/amd64（Docker 29.1.3，API 1.52，containerd 镜像存储，buildx v0.37.2）上实测。builder 以 `deploy/builder.example.yaml` 的同类配置运行（本地 `file://` 插件源、内置 registry 监听 `127.0.0.1:15000`）。实际锁定版本：Debian trixie-slim `sha256:a29215f6…`，Node.js 24.21.0，Codex 0.162.1，oar（`@botiverse/oar-cli`）0.51.0，akhook `3f4a7678`，Rust 工具链 `rust:1-alpine@sha256:0cce0a5e…`。
 
 ## 自动化测试

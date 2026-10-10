@@ -27,9 +27,7 @@
   "spec": {
     "base": {"family": "debian-slim", "version": "trixie"},
     "platform": "linux/amd64",
-    "node": {"version": "24"},
-    "agent": {"type": "codex", "codex": {"version": "latest"}},
-    "oar": {"version": "latest-stable"},
+    "codex": {"version": "latest"},
     "plugins": [
       {"source": "https://github.com/org/plugins.git", "revision": "v1.2.0", "path": "plugins/memory"}
     ],
@@ -52,9 +50,8 @@
 
 - `base.family`：`debian-slim`（默认）或 `debian`，版本 `trixie`（默认）或 `bookworm`。其他值（包括 `alpine`、`ubuntu`）一律拒绝。
 - `platform`：只接受 Docker daemon 的原生平台（不做跨架构模拟）。
-- `node.version`：主版本线（`24`，取该线最新版本）或精确版本，至少 24（oar 的要求）。
-- `agent`：Agent runtime。`type` 目前只能是 `codex`（默认），其配置放在与类型同名的字段里：`agent.codex.version` 为 `latest` 或精确版本。这样以后增加 runtime 时只新增类型和对应字段，现有请求不变；与 `type` 不符的配置或未知类型会被拒绝。
-- `oar.version`：`latest-stable` 或精确版本。oar 是驱动所有 runtime 的入口，独立于 `agent`。
+- `codex.version`：`latest`（提交时解析为最新稳定版并锁定）或精确版本。锁定的是 `@openai/codex-sdk`，它依赖同版本的 `@openai/codex`。只支持 Codex。
+- Node.js 不可配置：镜像固定使用 24 线的最新版，在提交时锁定版本和 sha256。它只是控制 API 和 Codex 启动器的运行时；需要其他 Node 版本时，用 build 脚本自行安装。
 - `plugins[]`：插件所在 git 仓库（默认只允许 `https://`）、`revision`（提交、tag 或分支，提交时锁定为提交），以及仓库内的 `path`。插件须符合 [Agent Plugins](https://agent-plugins.org) 1.0.0 或 1.1.0 标准，映射规则见[运行契约](runtime-contract.md#插件映射)。
   - `plugin.json` 不合规时，提交返回 400。
   - 无效的 skill 或 MCP 条目会被跳过，并在 `resolvedSpec.plugins[].warnings` 中说明。
@@ -65,7 +62,7 @@
 
 服务先检查幂等键：
 
-- 新键：校验 → 解析并锁定（基础镜像 digest、Node.js 版本与 sha256、Codex/oar 版本、akhook 提交、插件提交）→ 持久化 → **202**，`Location: /builds/{id}`。持久化之后客户端断开不影响构建。
+- 新键：校验 → 解析并锁定（基础镜像 digest、Node.js 版本与 sha256、Codex 版本、akhook 提交、插件提交）→ 持久化 → **202**，`Location: /builds/{id}`。持久化之后客户端断开不影响构建。
 - 同键同内容（JSON 规范化后比较，键序与空白无关）：**200** 返回原构建，`Idempotent-Replayed: true`，不再解析。
 - 同键不同内容：**409**。
 - 同一规格换新键：新构建（规格摘要相同，重新解析 latest）。

@@ -8,31 +8,31 @@ builder 交付的镜像遵循本契约；镜像 label `io.sandboxed-agent-builde
 
 1. 安装调用方提供的 Codex 凭据：`CODEX_AUTH_JSON_FILE` 指向的 auth.json 复制到 `$CODEX_HOME/auth.json`；否则若设置 `OPENAI_API_KEY` 且尚无 auth.json，执行 `codex login --with-api-key`。镜像本身不含任何凭据。
 2. 按文件名顺序以 `/bin/sh -e` 执行 `/opt/agent/startup/*.sh`（规格中的 `scripts.startup`），每次容器启动都执行。任一失败则退出码 70，不启动 Codex。
-3. 参数为 `serve` 时启动 [Agent 控制 API](agent-api.md)（Hono，默认端口 8080，需要 `AGENT_API_TOKEN`）；其他参数原样交给 `exec oar "$@"`，即容器参数就是 oar 的命令行。
+3. 参数为 `serve` 时启动 [Agent 控制 API](agent-api.md)（Hono，默认端口 8080，需要 `AGENT_API_TOKEN`）；其他参数原样交给 `exec codex "$@"`，即容器参数就是 Codex 的命令行。
 
 ```sh
 docker run --rm \
   -v /secure/codex-auth.json:/run/codex-auth.json:ro -e CODEX_AUTH_JSON_FILE=/run/codex-auth.json \
   -e MCP_TOKEN_GITHUB_GITHUB=... \     # resolvedSpec.runtimeEnv 中的变量
   -v agent-workspace:/workspace \
-  IMAGE run codex "Fix the failing test" --record /workspace/.oar/run.jsonl
+  IMAGE exec --skip-git-repo-check --json "Fix the failing test"
 ```
 
-调用方通常用默认的控制 API 管理会话（打开、输入、中止、事件流、恢复），见 [agent-api.md](agent-api.md)。直接使用 oar CLI 的方式（`oar run`、`--resume`、`oar mcp` 等）见 oar 文档。
+调用方通常用默认的控制 API 管理会话（打开、输入、中止、事件流、恢复），见 [agent-api.md](agent-api.md)。也可以直接使用 Codex CLI，例如 `codex exec`、`codex exec resume <thread>`。
 
 ## 布局
 
 | 路径 | 内容 |
 | --- | --- |
-| `/usr/local/bin/{node,npm,codex,oar,akhook}` | 锁定版本的 Node.js、Codex、oar（npm 全局安装）、akhook（从锁定提交静态编译） |
+| `/usr/local/bin/{node,npm,codex,akhook}` | 锁定版本的 Node.js、Codex（链接到控制 API 安装的 `@openai/codex`）、akhook（从锁定提交静态编译） |
 | `/etc/codex/config.toml` | 系统级 Codex 配置：`sandbox_mode = "danger-full-access"`（容器即隔离边界）和插件 MCP 服务器 |
 | `/etc/codex/requirements.toml` | managed hooks：`PreToolUse`、`UserPromptSubmit`、`Stop` 均交给 `akhook codex hook …`，`allow_managed_hooks_only = true` |
 | `/etc/codex/skills/<plugin>--<dir>/` | 插件 skill（Codex admin scope） |
 | `/etc/akhook/plugins.yml` | 合并后的插件 akhook 规则（`AKHOOK_ADDITIONAL_CONFIG_PATH`） |
 | `/opt/agent/plugins/<name>/` | 插件目录（`${PLUGIN_ROOT}`） |
 | `/opt/agent/startup/` | 启动脚本 |
-| `/opt/agent/server/` | Agent 控制 API（Hono），使用 oar CLI 安装的同版本 oar 库 |
-| `/opt/agent/manifest.json` | 构建来源：基础镜像 digest、Node 版本、`agent`（`{"type":"codex","codex":{"package","version"}}`）、oar 版本、akhook 提交、插件、启动脚本、runtimeEnv |
+| `/opt/agent/server/` | Agent 控制 API（Hono + 与 Codex 同版本的 `@openai/codex-sdk`） |
+| `/opt/agent/manifest.json` | 构建来源：基础镜像 digest、Node 版本、`codex`（`{"package","version"}`）、akhook 提交、插件、启动脚本、runtimeEnv |
 | `/workspace` | 工作目录，属主 `agent`（uid 1000），供调用方挂载 |
 | `/home/agent/.codex` | `CODEX_HOME`，会话与 auth.json |
 
@@ -67,7 +67,7 @@ docker run --rm \
 
 **扩展目录**：hook 不在标准范围内，因此放在本镜像实现的扩展命名空间 `app.aghub.akhook` 下，由 akhook 执行，语义见下节。其他客户端的扩展目录和 `extensions` 字段一律忽略、不做校验。
 
-MCP 工具在配置中设为 `default_tools_approval_mode = "approve"`：oar 以 `approvalPolicy: never` 驱动 Codex，没有人回答审批请求。
+MCP 工具在配置中设为 `default_tools_approval_mode = "approve"`：控制 API 以 `approval_policy = "never"` 驱动 Codex，没有人回答审批请求。
 
 不支持、提交时拒绝的写法：`command`/`args`/`cwd`/`url` 中的运行时变量（只展开 `${PLUGIN_ROOT}`；Codex 不在这些字段做环境变量替换）、部分拼接的运行时变量、Claude 风格 `hooks/hooks.json`、akhook 以外的 hook 事件。
 

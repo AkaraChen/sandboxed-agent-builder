@@ -4,7 +4,7 @@
 
 | 文件 | 内容 |
 | --- | --- |
-| [minimal.json](minimal.json) | 全部用默认值：Debian slim trixie、最新 Codex、最新稳定版 oar、本地镜像 |
+| [minimal.json](minimal.json) | 全部用默认值：Debian slim trixie、最新 Codex、本地镜像 |
 | [registry.json](registry.json) | 装一个 apt 包，推送到内置 registry（需要在配置里启用 registry），交付 `repository@digest` |
 | [go-github/](go-github/) | Go 开发环境 + GitHub 官方的 Agent Plugin，并用自己的模型服务驱动 Codex |
 

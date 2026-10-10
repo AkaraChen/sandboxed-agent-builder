@@ -6,9 +6,9 @@
 
 提供官方 Debian slim、完整 Debian 两类基础镜像，默认 Debian slim，不提供 Alpine 和 Ubuntu（Alpine 曾实现并在 amd64 上验证，按评审意见移除）。基础镜像限定到明确来源和版本，记录解析后的 digest。
 
-Agent runtime 只支持 Codex，仍通过 oar 驱动。产品参数不提供其他 runtime 选项。Codex 的版本策略需要明确并记录实际安装版本。
+Agent runtime 只支持 Codex（不再经过 oar，按评审意见移除）。产品参数不提供其他 runtime 选项。Codex 的版本策略需要明确并记录实际安装版本。
 
-oar 默认选择提交新构建时的最新稳定版本，并在入队前解析、持久化为具体版本；重试沿用该版本。升级 oar 通过新构建完成，不在同一构建的重试中重新解析 latest。验证最新版 oar 对所选 Codex、Node.js 和平台的要求。
+Codex 默认选择提交新构建时的最新稳定版本，并在入队前解析、持久化为具体版本；重试沿用该版本。
 
 ## 参数示意
 
@@ -17,12 +17,8 @@ base:
   family: debian-slim # debian-slim | debian
   version: "<明确发行版本>"
 platform: linux/amd64
-agent:
-  type: codex # 目前唯一的类型；配置放在同名字段里
-  codex:
-    version: "<版本或明确版本策略>"
-oar:
-  version: latest-stable
+codex:
+  version: "<latest 或精确版本>"
 plugins:
   - source: "<插件来源>"
     revision: "<不可变版本或提交>"
@@ -44,7 +40,7 @@ output:
 
 示例脚本适用于 Debian。脚本使用所选基础镜像的工具和包管理器；builder 不转换 apt 与 apk。插件配置区分静态安装配置和运行时配置/凭据引用。
 
-提交保存原始请求和解析后的规格：基础镜像 digest、Codex/oar/Node.js/akhook 的实际版本、插件内容及平台。幂等重放返回原构建，主动新构建才能重新解析版本策略。
+提交保存原始请求和解析后的规格：基础镜像 digest、Codex/Node.js/akhook 的实际版本、插件内容及平台。幂等重放返回原构建，主动新构建才能重新解析版本策略。
 
 模型、系统指令、任务、会话恢复参数、工作区挂载、实例身份和运行凭据由调用方启动容器时提供。只有影响镜像内容的配置才属于构建参数。
 
@@ -80,7 +76,7 @@ runtime 没有对应拦截入口时，adapter 无法凭空实现执行前阻止�
 
 ## 交付的镜像与元数据
 
-镜像包含 Codex、Node.js、oar、akhook、插件、脚本及标准运行入口。调用方负责运行和连接它；builder 不创建 Agent 会话。
+镜像包含 Codex、Node.js、akhook、插件、脚本、控制 API 及标准运行入口。调用方负责运行和连接它；builder 不创建 Agent 会话。
 
 返回构建 ID、attempt ID、原始及解析规格引用、规格摘要、平台和产物引用。记录运行契约版本及必要环境变量/挂载/凭据名称，实际通信协议待评审。镜像构建成功不表示运行凭据有效或 Agent 已就绪。
 
@@ -102,7 +98,6 @@ registry blob/manifest 存储与构建数据库分别持久化。镜像清理和
 
 ## 参考
 
-- https://github.com/botiverse/oar
 - https://github.com/aghub-app/akhook
 - https://github.com/distribution/distribution
 - https://github.com/google/go-containerregistry/tree/main/pkg/registry
