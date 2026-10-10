@@ -34,7 +34,7 @@ func (r *resolver) Resolve(_ context.Context, s spec.Spec) (spec.Resolved, error
 	return spec.Resolved{
 		Contract: 1, Platform: s.Platform, Scripts: s.Scripts, Output: s.Output,
 		Base:  spec.ResolvedImage{Family: s.Base.Family, Version: s.Base.Version, Image: "debian", Digest: "sha256:base"},
-		Codex: spec.ResolvedPackage{Package: "@openai/codex", Version: "1.0.0"},
+		Agent: spec.ResolvedAgent{Type: s.Agent.Type, Codex: &spec.ResolvedPackage{Package: "@openai/codex", Version: s.Agent.Codex.Version}},
 		Oar:   spec.ResolvedPackage{Package: "@botiverse/oar-cli", Version: "0.51.0"},
 	}, nil
 }
@@ -202,6 +202,9 @@ func TestSubmitRejectsInvalidSpecs(t *testing.T) {
 		`{"spec":{"scripts":{"build":[{"name":"x","run":"y","secrets":["nope"]}]}}}`,
 		`{"spec":{"scripts":{"startup":[{"name":"x","run":"y","secrets":["tok"]}]}}}`,
 		`{"spec":{"unknown":1}}`,
+		`{"spec":{"codex":{"version":"latest"}}}`,
+		`{"spec":{"agent":{"type":"claude"}}}`,
+		`{"spec":{"agent":{"type":"codex","codex":{"version":"^1"}}}}`,
 		`{"spec":{"output":{"type":"registry","repository":"Bad Name"}}}`,
 	} {
 		_, err := e.service.Submit(context.Background(), "axp", "k", []byte(b))

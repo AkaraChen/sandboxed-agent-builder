@@ -52,6 +52,7 @@ const (
 
 func dockerfile(r spec.Resolved, plugins []*plugin.Plugin) (string, []string) {
 	alpine := r.Base.Family == spec.FamilyAlpine
+	codex := r.Agent.Codex // Write checked the agent is Codex.
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
@@ -88,8 +89,8 @@ func dockerfile(r spec.Resolved, plugins []*plugin.Plugin) (string, []string) {
 	w("RUN test \"$(node --version)\" = v%s", r.Node.Version)
 	w("COPY --from=akhook /akhook /usr/local/bin/akhook")
 	w("RUN npm install -g --no-fund --no-audit --omit=dev %s@%s %s@%s && npm cache clean --force \\",
-		r.Codex.Package, r.Codex.Version, r.Oar.Package, r.Oar.Version)
-	w("    && test \"$(codex --version)\" = \"codex-cli %s\" \\", r.Codex.Version)
+		codex.Package, codex.Version, r.Oar.Package, r.Oar.Version)
+	w("    && test \"$(codex --version)\" = \"codex-cli %s\" \\", codex.Version)
 	w("    && test \"$(node -p \"require('$(npm root -g)/%s/package.json').version\")\" = %s \\", r.Oar.Package, r.Oar.Version)
 	w("    && oar list >/dev/null && rm -rf /tmp/node-compile-cache")
 	w("COPY agent/entrypoint.sh /usr/local/bin/agent-entrypoint")

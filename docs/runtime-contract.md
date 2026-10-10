@@ -31,7 +31,7 @@ oar 的会话控制（`oar run`、`--resume`、`oar mcp` 等）见 oar 文档；
 | `/etc/akhook/plugins.yml` | 合并后的插件 akhook 规则（`AKHOOK_ADDITIONAL_CONFIG_PATH`） |
 | `/opt/agent/plugins/<name>/` | 插件目录（`${PLUGIN_ROOT}`） |
 | `/opt/agent/startup/` | 启动脚本 |
-| `/opt/agent/manifest.json` | 构建来源：基础镜像 digest、Node/Codex/oar 版本、akhook 提交、插件、启动脚本、runtimeEnv |
+| `/opt/agent/manifest.json` | 构建来源：基础镜像 digest、Node 版本、`agent`（`{"type":"codex","codex":{"package","version"}}`）、oar 版本、akhook 提交、插件、启动脚本、runtimeEnv |
 | `/workspace` | 工作目录，属主 `agent`（uid 1000），供调用方挂载 |
 | `/home/agent/.codex` | `CODEX_HOME`，会话与 auth.json |
 

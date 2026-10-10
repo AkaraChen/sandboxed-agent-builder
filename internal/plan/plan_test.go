@@ -27,7 +27,7 @@ func TestWrite(t *testing.T) {
 		Contract: 1, Platform: "linux/amd64",
 		Base:    spec.ResolvedImage{Family: spec.FamilyDebianSlim, Version: "trixie", Image: "docker.io/library/debian:trixie-slim", Digest: "sha256:base"},
 		Node:    spec.ResolvedNode{Version: "24.1.0", URL: "https://nodejs.org/dist/v24.1.0/node.tar.gz", SHA256: "abc"},
-		Codex:   spec.ResolvedPackage{Package: "@openai/codex", Version: "1.2.3"},
+		Agent:   spec.ResolvedAgent{Type: spec.AgentCodex, Codex: &spec.ResolvedPackage{Package: "@openai/codex", Version: "1.2.3"}},
 		Oar:     spec.ResolvedPackage{Package: "@botiverse/oar-cli", Version: "0.51.0"},
 		Akhook:  spec.ResolvedAkhook{Repository: "https://github.com/aghub-app/akhook", Commit: strings.Repeat("a", 40), Toolchain: spec.ResolvedImage{Image: "rust:1-alpine", Digest: "sha256:rust"}},
 		Plugins: []spec.ResolvedPlugin{{Name: "probe", Source: "https://x", Commit: strings.Repeat("b", 40), Path: "plugins/probe", ContentDigest: digest}},

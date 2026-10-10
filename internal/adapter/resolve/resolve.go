@@ -79,8 +79,15 @@ func (r *Resolver) Resolve(ctx context.Context, s spec.Spec) (spec.Resolved, err
 	if out.Node, err = r.node(ctx, s.Node.Version, s.Platform, s.Base.Family == spec.FamilyAlpine); err != nil {
 		return out, err
 	}
-	if out.Codex, err = r.npm(ctx, CodexPackage, s.Codex.Version); err != nil {
-		return out, err
+	switch s.Agent.Type {
+	case spec.AgentCodex:
+		codex, err := r.npm(ctx, CodexPackage, s.Agent.Codex.Version)
+		if err != nil {
+			return out, err
+		}
+		out.Agent = spec.ResolvedAgent{Type: spec.AgentCodex, Codex: &codex}
+	default:
+		return out, invalid("agent.type: %q is not supported", s.Agent.Type)
 	}
 	if out.Oar, err = r.npm(ctx, OarPackage, s.Oar.Version); err != nil {
 		return out, err

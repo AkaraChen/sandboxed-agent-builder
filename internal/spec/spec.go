@@ -31,6 +31,9 @@ const (
 	OutputRegistry = "registry"
 )
 
+// Agent runtimes. Codex is the only one; Agent.Type leaves room for more.
+const AgentCodex = "codex"
+
 // Version policies.
 const (
 	Latest       = "latest"
@@ -50,7 +53,7 @@ type Spec struct {
 	Base     Base     `json:"base"`
 	Platform string   `json:"platform,omitempty"`
 	Node     Version  `json:"node"`
-	Codex    Version  `json:"codex"`
+	Agent    Agent    `json:"agent"`
 	Oar      Version  `json:"oar"`
 	Plugins  []Plugin `json:"plugins,omitempty"`
 	Scripts  Scripts  `json:"scripts"`
@@ -59,6 +62,19 @@ type Spec struct {
 
 type Base struct {
 	Family  string `json:"family,omitempty"`
+	Version string `json:"version,omitempty"`
+}
+
+// Agent is the agent runtime the image runs (through oar). Type selects
+// the runtime; the field named like the type holds its configuration, and
+// the others must be unset.
+type Agent struct {
+	Type  string       `json:"type,omitempty"`
+	Codex *CodexConfig `json:"codex,omitempty"`
+}
+
+// CodexConfig configures the Codex runtime.
+type CodexConfig struct {
 	Version string `json:"version,omitempty"`
 }
 
@@ -175,11 +191,22 @@ func (s *Spec) Normalize(p Policy) error {
 	} else if major, _ := strconv.Atoi(strings.SplitN(s.Node.Version, ".", 2)[0]); major < 24 {
 		add("node.version: oar needs Node.js 24 or later")
 	}
-	if s.Codex.Version == "" {
-		s.Codex.Version = Latest
+	if s.Agent.Type == "" {
+		s.Agent.Type = AgentCodex
 	}
-	if s.Codex.Version != Latest && !semver.MatchString(s.Codex.Version) {
-		add("codex.version: %q is not %q or an exact version", s.Codex.Version, Latest)
+	switch s.Agent.Type {
+	case AgentCodex:
+		if s.Agent.Codex == nil {
+			s.Agent.Codex = &CodexConfig{}
+		}
+		if s.Agent.Codex.Version == "" {
+			s.Agent.Codex.Version = Latest
+		}
+		if v := s.Agent.Codex.Version; v != Latest && !semver.MatchString(v) {
+			add("agent.codex.version: %q is not %q or an exact version", v, Latest)
+		}
+	default:
+		add("agent.type: %q is not supported; the only agent type is %q", s.Agent.Type, AgentCodex)
 	}
 	if s.Oar.Version == "" {
 		s.Oar.Version = LatestStable
@@ -277,7 +304,7 @@ type Resolved struct {
 	Platform string           `json:"platform"`
 	Base     ResolvedImage    `json:"base"`
 	Node     ResolvedNode     `json:"node"`
-	Codex    ResolvedPackage  `json:"codex"`
+	Agent    ResolvedAgent    `json:"agent"`
 	Oar      ResolvedPackage  `json:"oar"`
 	Akhook   ResolvedAkhook   `json:"akhook"`
 	Plugins  []ResolvedPlugin `json:"plugins"`
@@ -303,6 +330,13 @@ type ResolvedNode struct {
 	Version string `json:"version"`
 	URL     string `json:"url"`
 	SHA256  string `json:"sha256"`
+}
+
+// ResolvedAgent is the locked agent runtime; like Agent, the field named
+// like Type is set.
+type ResolvedAgent struct {
+	Type  string           `json:"type"`
+	Codex *ResolvedPackage `json:"codex,omitempty"`
 }
 
 type ResolvedPackage struct {

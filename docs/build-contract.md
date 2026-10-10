@@ -17,8 +17,10 @@ base:
   family: debian-slim # debian-slim | debian | alpine
   version: "<明确发行版本>"
 platform: linux/amd64
-codex:
-  version: "<版本或明确版本策略>"
+agent:
+  type: codex # 目前唯一的类型；配置放在同名字段里
+  codex:
+    version: "<版本或明确版本策略>"
 oar:
   version: latest-stable
 plugins:

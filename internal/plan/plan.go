@@ -44,6 +44,9 @@ type Plan struct {
 
 // Write writes r's build context into dir, which must be empty.
 func Write(r spec.Resolved, fetch Fetcher, dir string) (*Plan, error) {
+	if r.Agent.Type != spec.AgentCodex || r.Agent.Codex == nil {
+		return nil, fmt.Errorf("agent %q: only Codex images can be planned", r.Agent.Type)
+	}
 	var plugins []*plugin.Plugin
 	for _, rp := range r.Plugins {
 		repo, err := fetch.Fetch(rp.Source, rp.Commit)
@@ -127,7 +130,7 @@ type ImageManifest struct {
 	Platform   string                `json:"platform"`
 	Base       spec.ResolvedImage    `json:"base"`
 	Node       string                `json:"node"`
-	Codex      string                `json:"codex"`
+	Agent      spec.ResolvedAgent    `json:"agent"`
 	Oar        string                `json:"oar"`
 	Akhook     string                `json:"akhook"`
 	Plugins    []spec.ResolvedPlugin `json:"plugins"`
@@ -138,7 +141,7 @@ type ImageManifest struct {
 func Manifest(r spec.Resolved) ImageManifest {
 	m := ImageManifest{
 		Contract: Contract, Platform: r.Platform, Base: r.Base,
-		Node: r.Node.Version, Codex: r.Codex.Version, Oar: r.Oar.Version, Akhook: r.Akhook.Commit,
+		Node: r.Node.Version, Agent: r.Agent, Oar: r.Oar.Version, Akhook: r.Akhook.Commit,
 		Plugins: r.Plugins, RuntimeEnv: r.RuntimeEnv, Startup: []string{},
 	}
 	for _, s := range r.Scripts.Startup {

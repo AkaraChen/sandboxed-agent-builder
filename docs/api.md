@@ -28,7 +28,7 @@
     "base": {"family": "debian-slim", "version": "trixie"},
     "platform": "linux/amd64",
     "node": {"version": "24"},
-    "codex": {"version": "latest"},
+    "agent": {"type": "codex", "codex": {"version": "latest"}},
     "oar": {"version": "latest-stable"},
     "plugins": [
       {"source": "https://github.com/org/plugins.git", "revision": "v1.2.0", "path": "plugins/memory"}
@@ -53,7 +53,8 @@
 - `base.family`：`debian-slim`（默认）、`debian`、`alpine`。Debian 版本 `trixie`（默认）/`bookworm`；Alpine `3.22`，仅在配置 `alpineVerified: true` 时接受。`ubuntu` 被拒绝。
 - `platform`：只接受 Docker daemon 的原生平台（不做跨架构模拟）。
 - `node.version`：主版本线（`24`，取该线最新版本）或精确版本，至少 24（oar 的要求）。
-- `codex.version`：`latest` 或精确版本；`oar.version`：`latest-stable` 或精确版本。
+- `agent`：Agent runtime。`type` 目前只能是 `codex`（默认），其配置放在与类型同名的字段里：`agent.codex.version` 为 `latest` 或精确版本。这样以后增加 runtime 时只新增类型和对应字段，现有请求不变；与 `type` 不符的配置或未知类型会被拒绝。
+- `oar.version`：`latest-stable` 或精确版本。oar 是驱动所有 runtime 的入口，独立于 `agent`。
 - `plugins[]`：Agent Plugin 所在 git 仓库（默认只允许 `https://`）、`revision`（提交、tag 或分支）和仓库内路径。
 - `scripts.build[]`：按顺序每项一个 `RUN`，以 `/bin/sh -e` 执行；`secrets` 引用运维配置的 build secret，挂载在 `/run/secrets/<id>`，仅该步可见。
 - `scripts.startup[]`：打包进镜像，容器每次启动时由入口按顺序执行，构建时不执行，不能引用 build secret。
