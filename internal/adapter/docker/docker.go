@@ -10,11 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
@@ -129,15 +127,13 @@ func (d *Daemon) Build(ctx context.Context, req app.BuildRequest, log app.LogFun
 	}
 
 	ch := make(chan *client.SolveStatus)
-	pr, pw := io.Pipe()
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		_, err := bk.Solve(egCtx, nil, opt, ch)
 		return err
 	})
 	eg.Go(func() error {
-		defer pw.Close()
-		display, err := progressui.NewDisplay(pw, progressui.PlainMode)
+		display, err := progressui.NewDisplay(logWriter(log), progressui.PlainMode)
 		if err != nil {
 			for range ch {
 			}
@@ -146,22 +142,7 @@ func (d *Daemon) Build(ctx context.Context, req app.BuildRequest, log app.LogFun
 		_, err = display.UpdateFrom(context.WithoutCancel(egCtx), ch)
 		return err
 	})
-	var copyWG sync.WaitGroup
-	copyWG.Go(func() {
-		buf := make([]byte, 32<<10)
-		for {
-			n, err := pr.Read(buf)
-			if n > 0 {
-				log("buildkit", string(buf[:n]))
-			}
-			if err != nil {
-				return
-			}
-		}
-	})
 	err = eg.Wait()
-	pr.Close()
-	copyWG.Wait()
 	if err != nil {
 		if ctx.Err() != nil {
 			return app.Image{}, fmt.Errorf("build stopped: %w", context.Cause(ctx))
@@ -192,6 +173,14 @@ func (d *Daemon) inspect(ctx context.Context, ref string) (*app.Image, error) {
 
 func isNotFound(err error) bool {
 	return err != nil && (strings.Contains(strings.ToLower(err.Error()), "no such image") || strings.Contains(strings.ToLower(err.Error()), "not found"))
+}
+
+// logWriter passes BuildKit's plain progress output to the attempt log.
+type logWriter app.LogFunc
+
+func (w logWriter) Write(p []byte) (int, error) {
+	w("buildkit", string(p))
+	return len(p), nil
 }
 
 // FindAttemptImage looks the attempt's tag up and checks its labels.
