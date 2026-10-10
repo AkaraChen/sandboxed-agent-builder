@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/akarachen/sandboxed-agent-builder/internal/domain"
 	"github.com/akarachen/sandboxed-agent-builder/internal/spec"
@@ -17,8 +18,6 @@ type Service struct {
 	Store    Store
 	Resolver Resolver
 	Policy   func() spec.Policy
-	Clock    Clock
-	IDs      IDs
 	Log      *slog.Logger
 }
 
@@ -77,13 +76,13 @@ func (s *Service) Submit(ctx context.Context, caller, key string, body []byte) (
 		return Submitted{}, err
 	}
 
-	now := s.Clock.Now().UTC()
+	now := time.Now().UTC()
 	b := domain.Build{
-		ID: s.IDs.New("bld"), Caller: caller, IdempotencyKey: key, RequestHash: hash,
+		ID: domain.NewID("bld"), Caller: caller, IdempotencyKey: key, RequestHash: hash,
 		SpecDigest: resolved.Digest(), RawSpec: body, ResolvedSpec: resolvedJSON,
 		NoCache: req.NoCache, CreatedAt: now,
 	}
-	a := domain.Attempt{ID: s.IDs.New("att"), BuildID: b.ID, Number: 1, Status: domain.StatusQueued, CreatedAt: now}
+	a := domain.Attempt{ID: domain.NewID("att"), BuildID: b.ID, Number: 1, Status: domain.StatusQueued, CreatedAt: now}
 	b.CurrentAttemptID, b.Attempts = a.ID, 1
 
 	// Once resolved, storing completes even if the client went away: the
@@ -149,7 +148,7 @@ func (s *Service) Cancel(ctx context.Context, caller, id string) (domain.Attempt
 	if _, err := s.Store.GetBuild(ctx, caller, id); err != nil {
 		return domain.Attempt{}, err
 	}
-	a, err := s.Store.RequestCancel(context.WithoutCancel(ctx), id, s.Clock.Now().UTC())
+	a, err := s.Store.RequestCancel(context.WithoutCancel(ctx), id, time.Now().UTC())
 	if err == nil {
 		s.Log.InfoContext(ctx, "cancel requested", "build_id", id, "attempt_id", a.ID, "status", a.Status)
 	}
@@ -167,7 +166,7 @@ func (s *Service) Retry(ctx context.Context, caller, id, key string) (domain.Att
 	if err != nil {
 		return domain.Attempt{}, false, err
 	}
-	a := domain.Attempt{ID: s.IDs.New("att"), BuildID: b.ID, Status: domain.StatusQueued, CreatedAt: s.Clock.Now().UTC()}
+	a := domain.Attempt{ID: domain.NewID("att"), BuildID: b.ID, Status: domain.StatusQueued, CreatedAt: time.Now().UTC()}
 	a, created, err := s.Store.CreateRetry(context.WithoutCancel(ctx), caller, key, hash, a)
 	if err == nil && created {
 		s.Log.InfoContext(ctx, "retry queued", "build_id", b.ID, "attempt_id", a.ID, "attempt", a.Number)

@@ -41,7 +41,6 @@ type Worker struct {
 	Executor  Executor
 	Publisher Publisher // nil without a registry
 	Secrets   Secrets
-	Clock     Clock
 	Config    WorkerConfig
 	Log       *slog.Logger
 }
@@ -102,7 +101,7 @@ func (w *Worker) Run(ctx context.Context) {
 // RunOnce claims one queued attempt and runs it to its end. It reports
 // whether there was one.
 func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
-	now := w.Clock.Now().UTC()
+	now := time.Now().UTC()
 	claim, err := w.Store.Claim(ctx, w.Config.ID, now, now.Add(w.Config.Lease))
 	if err != nil || claim == nil {
 		return false, err
@@ -124,7 +123,7 @@ func (w *Worker) execute(parent context.Context, c *Claim) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 
-	sink := newLogSink(w.Store, c.Lease, w.Config.MaxLogBytes, redactor(w.Secrets), w.Clock, func(err error) {
+	sink := newLogSink(w.Store, c.Lease, w.Config.MaxLogBytes, redactor(w.Secrets), func(err error) {
 		if errors.Is(err, domain.ErrStaleLease) {
 			cancel(errLeaseLost)
 		} else {
@@ -141,7 +140,7 @@ func (w *Worker) execute(parent context.Context, c *Claim) {
 		t := time.NewTicker(w.Config.Lease / 3)
 		defer t.Stop()
 		for {
-			cancelled, err := w.Store.Renew(context.WithoutCancel(ctx), c.Lease, w.Clock.Now().UTC().Add(w.Config.Lease))
+			cancelled, err := w.Store.Renew(context.WithoutCancel(ctx), c.Lease, time.Now().UTC().Add(w.Config.Lease))
 			switch {
 			case errors.Is(err, domain.ErrStaleLease):
 				cancel(errLeaseLost)
@@ -181,7 +180,7 @@ func (w *Worker) execute(parent context.Context, c *Claim) {
 				Stage: outcome.Failure.Stage, Code: domain.CodeInterrupted, Message: "the builder shut down while the attempt ran; retry to build again"}}
 		}
 	}
-	if err := w.Store.Finish(context.WithoutCancel(ctx), c.Lease, outcome, w.Clock.Now().UTC(), false); err != nil {
+	if err := w.Store.Finish(context.WithoutCancel(ctx), c.Lease, outcome, time.Now().UTC(), false); err != nil {
 		log.Error("recording the outcome failed", "err", err, "status", outcome.Status)
 		span.SetStatus(codes.Error, err.Error())
 		return

@@ -21,7 +21,6 @@ type Reconciler struct {
 	Store     Store
 	Executor  Executor
 	Publisher Publisher
-	Clock     Clock
 	ID        string
 	Lease     time.Duration
 	Log       *slog.Logger
@@ -45,7 +44,7 @@ func (r *Reconciler) Run(ctx context.Context, interval time.Duration) {
 
 // RunOnce settles the attempts expired now and returns how many it settled.
 func (r *Reconciler) RunOnce(ctx context.Context) (int, error) {
-	now := r.Clock.Now().UTC()
+	now := time.Now().UTC()
 	expired, err := r.Store.Expired(ctx, now, 50)
 	if err != nil {
 		return 0, err
@@ -107,7 +106,7 @@ func (r *Reconciler) settle(ctx context.Context, c *Claim) bool {
 	case art != nil:
 		outcome = domain.Outcome{Status: domain.StatusSucceeded, Artifact: art}
 	}
-	if err := r.Store.Finish(ctx, c.Lease, outcome, r.Clock.Now().UTC(), true); err != nil {
+	if err := r.Store.Finish(ctx, c.Lease, outcome, time.Now().UTC(), true); err != nil {
 		log.Error("recording the reconciled outcome failed", "err", err)
 		return false
 	}

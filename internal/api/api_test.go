@@ -5,14 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,14 +18,6 @@ import (
 	"github.com/akarachen/sandboxed-agent-builder/internal/app"
 	"github.com/akarachen/sandboxed-agent-builder/internal/spec"
 )
-
-type clock struct{}
-
-func (clock) Now() time.Time { return time.Now() }
-
-type ids struct{ n atomic.Int64 }
-
-func (i *ids) New(p string) string { return fmt.Sprintf("%s_%04d", p, i.n.Add(1)) }
 
 type resolver struct{}
 
@@ -48,7 +38,7 @@ func server(t *testing.T) (*httptest.Server, *sqlite.Store) {
 	t.Cleanup(func() { store.Close() })
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	policy := spec.Policy{Platforms: []string{"linux/amd64"}, PluginSource: func(string) bool { return false }}
-	svc := &app.Service{Store: store, Resolver: resolver{}, Policy: func() spec.Policy { return policy }, Clock: clock{}, IDs: &ids{}, Log: log}
+	svc := &app.Service{Store: store, Resolver: resolver{}, Policy: func() spec.Policy { return policy }, Log: log}
 	s := &Server{Service: svc, Log: log, Callers: []Caller{{ID: "axp", TokenSHA256: hash("axp-token")}, {ID: "other", TokenSHA256: hash("other-token")}}}
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)

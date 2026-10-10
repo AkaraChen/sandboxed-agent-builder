@@ -138,10 +138,3 @@ type Secrets interface {
 	// Values lists every configured secret value, for redaction.
 	Values() [][]byte
 }
-
-// Clock and IDs make time and identifiers injectable in tests.
-type Clock interface{ Now() time.Time }
-
-type IDs interface {
-	New(prefix string) string
-}

@@ -5,10 +5,26 @@
 package domain
 
 import (
+	"crypto/rand"
+	"encoding/base32"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
+
+var idEncoding = base32.NewEncoding("0123456789abcdefghjkmnpqrstvwxyz").WithPadding(base32.NoPadding)
+
+// NewID makes a time-ordered identifier: prefix_ + 26 lowercase base32
+// characters (48-bit milliseconds, 80 random bits), valid as a Docker tag
+// and repository path component.
+func NewID(prefix string) string {
+	var b [16]byte
+	binary.BigEndian.PutUint64(b[:8], uint64(time.Now().UnixMilli())<<16)
+	_, _ = rand.Read(b[6:])
+	return prefix + "_" + strings.ToLower(idEncoding.EncodeToString(b[:]))
+}
 
 // Status is the state of one attempt.
 //

@@ -36,10 +36,10 @@ import (
 	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/registry"
 	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/resolve"
 	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/sqlite"
-	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/system"
 	"github.com/akarachen/sandboxed-agent-builder/internal/api"
 	"github.com/akarachen/sandboxed-agent-builder/internal/app"
 	"github.com/akarachen/sandboxed-agent-builder/internal/config"
+	"github.com/akarachen/sandboxed-agent-builder/internal/domain"
 	"github.com/akarachen/sandboxed-agent-builder/internal/plan"
 	"github.com/akarachen/sandboxed-agent-builder/internal/spec"
 )
@@ -184,27 +184,26 @@ func serve(log *slog.Logger, args []string) error {
 		Platforms: []string{platform}, AlpineVerified: c.AlpineVerified, Secrets: secrets.IDs(),
 		Registry: c.Registry.Enabled, PluginSource: git.Allowed,
 	}
-	clock, ids := system.Clock{}, system.IDs{}
 	resolver := &resolve.Resolver{
 		Images: daemon, HTTP: httpClient, Git: git,
 		NPMRegistry: c.Upstreams.NPMRegistry, NodeDist: c.Upstreams.NodeDist, NodeMuslDist: c.Upstreams.NodeMuslDist,
 		AkhookRepo: c.Upstreams.AkhookRepository, AkhookRef: c.Upstreams.AkhookRef, Toolchain: c.Upstreams.ToolchainImage,
 	}
-	service := &app.Service{Store: store, Resolver: resolver, Policy: func() spec.Policy { return policy }, Clock: clock, IDs: ids, Log: log}
+	service := &app.Service{Store: store, Resolver: resolver, Policy: func() spec.Policy { return policy }, Log: log}
 
 	workerID := c.Worker.ID
 	if workerID == "" {
 		host, _ := os.Hostname()
-		workerID = fmt.Sprintf("%s-%d-%s", host, os.Getpid(), ids.New("w")[2:10])
+		workerID = fmt.Sprintf("%s-%d-%s", host, os.Getpid(), domain.NewID("w")[2:10])
 	}
 	worker := &app.Worker{
-		Store: store, Planner: plan.Planner{Fetch: git}, Executor: daemon, Publisher: publisher, Secrets: secrets, Clock: clock, Log: log,
+		Store: store, Planner: plan.Planner{Fetch: git}, Executor: daemon, Publisher: publisher, Secrets: secrets, Log: log,
 		Config: app.WorkerConfig{
 			ID: workerID, Concurrency: c.Worker.Concurrency, Poll: c.Worker.PollInterval, Lease: c.Worker.Lease,
 			WorkDir: filepath.Join(c.DataDir, "work"), MaxLogBytes: c.Logs.MaxBytesPerAttempt, Grace: c.Worker.ShutdownGrace,
 		},
 	}
-	reconciler := &app.Reconciler{Store: store, Executor: daemon, Publisher: publisher, Clock: clock, ID: workerID + "-reconciler", Lease: c.Worker.Lease, Log: log}
+	reconciler := &app.Reconciler{Store: store, Executor: daemon, Publisher: publisher, ID: workerID + "-reconciler", Lease: c.Worker.Lease, Log: log}
 
 	var callers []api.Caller
 	for _, cl := range c.Auth.Callers {

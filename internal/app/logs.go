@@ -23,7 +23,6 @@ type logSink struct {
 	lease    domain.Lease
 	maxBytes int64
 	redact   func(string) string
-	clock    Clock
 	onErr    func(error)
 
 	mu      sync.Mutex
@@ -35,9 +34,9 @@ type logSink struct {
 	once    sync.Once
 }
 
-func newLogSink(store Store, lease domain.Lease, maxBytes int64, redact func(string) string, clock Clock, onErr func(error)) *logSink {
+func newLogSink(store Store, lease domain.Lease, maxBytes int64, redact func(string) string, onErr func(error)) *logSink {
 	s := &logSink{
-		store: store, lease: lease, maxBytes: maxBytes, redact: redact, clock: clock, onErr: onErr,
+		store: store, lease: lease, maxBytes: maxBytes, redact: redact, onErr: onErr,
 		partial: map[string]string{}, stop: make(chan struct{}), done: make(chan struct{}),
 	}
 	go func() {
@@ -68,7 +67,7 @@ func (s *logSink) add(stage domain.Stage, stream, text string) {
 		s.partial[stream] = lines[len(lines)-1]
 		lines = lines[:len(lines)-1]
 	}
-	now := s.clock.Now().UTC()
+	now := time.Now().UTC()
 	for _, l := range lines {
 		l = strings.TrimRight(l, "\r")
 		if len(l) > maxLineBytes {
@@ -103,7 +102,7 @@ func (s *logSink) close() {
 		close(s.stop)
 		<-s.done
 		s.mu.Lock()
-		now := s.clock.Now().UTC()
+		now := time.Now().UTC()
 		for stream, rest := range s.partial {
 			if rest != "" {
 				s.buf = append(s.buf, domain.LogEntry{Time: now, Stage: domain.StageBuild, Stream: stream, Text: s.redact(rest)})

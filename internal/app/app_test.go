@@ -3,7 +3,6 @@ package app_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -18,14 +17,6 @@ import (
 	"github.com/akarachen/sandboxed-agent-builder/internal/domain"
 	"github.com/akarachen/sandboxed-agent-builder/internal/spec"
 )
-
-type clock struct{}
-
-func (clock) Now() time.Time { return time.Now() }
-
-type ids struct{ n atomic.Int64 }
-
-func (i *ids) New(prefix string) string { return fmt.Sprintf("%s_%04d", prefix, i.n.Add(1)) }
 
 type resolver struct{ calls atomic.Int64 }
 
@@ -129,11 +120,10 @@ func setup(t *testing.T) *env {
 		log("buildkit", "step 1\nstep 2\n")
 		return app.Image{ID: "sha256:img-" + req.AttemptID, Ref: req.Tag, Platform: req.Platform}, nil
 	}}
-	ids := &ids{}
 	policy := spec.Policy{Platforms: []string{"linux/amd64"}, Secrets: []string{"tok"}, Registry: true, PluginSource: func(string) bool { return true }}
-	e.service = &app.Service{Store: store, Resolver: e.resolver, Policy: func() spec.Policy { return policy }, Clock: clock{}, IDs: ids, Log: log}
+	e.service = &app.Service{Store: store, Resolver: e.resolver, Policy: func() spec.Policy { return policy }, Log: log}
 	e.worker = &app.Worker{
-		Store: store, Planner: planner{}, Executor: e.exec, Publisher: e.pub, Secrets: secrets{"tok": "very-secret-token"}, Clock: clock{}, Log: log,
+		Store: store, Planner: planner{}, Executor: e.exec, Publisher: e.pub, Secrets: secrets{"tok": "very-secret-token"}, Log: log,
 		Config: app.WorkerConfig{ID: "w1", Concurrency: 1, Poll: 10 * time.Millisecond, Lease: 3 * time.Second, WorkDir: t.TempDir(), MaxLogBytes: 1 << 20, Grace: time.Second},
 	}
 	return e
@@ -379,7 +369,7 @@ func TestPublishFailureIsRecorded(t *testing.T) {
 func TestReconcile(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
-	r := &app.Reconciler{Store: e.store, Executor: e.exec, Publisher: e.pub, Clock: clock{}, ID: "rec", Lease: time.Minute, Log: e.worker.Log}
+	r := &app.Reconciler{Store: e.store, Executor: e.exec, Publisher: e.pub, ID: "rec", Lease: time.Minute, Log: e.worker.Log}
 
 	// A worker claimed three attempts and died: one finished its image,
 	// one did not, one (registry) built but its push is unconfirmed.
