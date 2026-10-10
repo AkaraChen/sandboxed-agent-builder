@@ -31,9 +31,6 @@ type WorkerConfig struct {
 	Lease       time.Duration
 	WorkDir     string
 	MaxLogBytes int64
-	// Grace is how long shutdown waits for running attempts before it
-	// stops them and records them interrupted.
-	Grace time.Duration
 }
 
 // Worker claims queued attempts and runs them.
@@ -52,7 +49,6 @@ type Worker struct {
 var (
 	errCancelRequested = errors.New("cancel requested")
 	errLeaseLost       = errors.New("lease lost")
-	errShutdown        = errors.New("builder shutting down")
 )
 
 // DaemonRef is the attempt's own tag in the daemon.
@@ -60,15 +56,14 @@ func DaemonRef(buildID, attemptID string) string {
 	return "sandboxed-agent-builder/" + buildID + ":" + attemptID
 }
 
-// Run claims and runs attempts until ctx is done, reconciling expired
-// attempts every lease period, then gives running attempts Config.Grace to
-// finish before stopping them.
+// Run claims and runs attempts and reconciles expired ones every lease
+// period until ctx is done. Ending ctx stops running builds; they are
+// recorded interrupted.
 func (w *Worker) Run(ctx context.Context) {
-	reconciled := make(chan struct{})
-	go func() {
-		defer close(reconciled)
+	var wg sync.WaitGroup
+	wg.Go(func() {
 		for {
-			if n, err := w.Reconcile(ctx); err != nil {
+			if n, err := w.Reconcile(ctx); err != nil && ctx.Err() == nil {
 				w.Log.Error("reconciling attempts failed", "err", err)
 			} else if n > 0 {
 				w.Log.Info("reconciled attempts", "count", n)
@@ -79,45 +74,24 @@ func (w *Worker) Run(ctx context.Context) {
 			case <-time.After(w.Config.Lease):
 			}
 		}
-	}()
-	defer func() { <-reconciled }()
-	stop := make(chan struct{})
-	work, cancelWork := context.WithCancelCause(context.WithoutCancel(ctx))
-	var wg sync.WaitGroup
-	for i := 0; i < max(1, w.Config.Concurrency); i++ {
+	})
+	for range max(1, w.Config.Concurrency) {
 		wg.Go(func() {
-			for {
-				ran, err := w.RunOnce(work)
-				if err != nil {
+			for ctx.Err() == nil {
+				ran, err := w.RunOnce(ctx)
+				if err != nil && ctx.Err() == nil {
 					w.Log.Error("claiming an attempt failed", "err", err)
 				}
-				if ran {
+				if !ran {
 					select {
-					case <-stop:
-						return
-					default:
-						continue
+					case <-ctx.Done():
+					case <-time.After(w.Config.Poll):
 					}
-				}
-				select {
-				case <-stop:
-					return
-				case <-time.After(w.Config.Poll):
 				}
 			}
 		})
 	}
-	<-ctx.Done()
-	close(stop)
-	done := make(chan struct{})
-	go func() { wg.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(w.Config.Grace):
-		cancelWork(errShutdown)
-		<-done
-	}
-	cancelWork(nil)
+	wg.Wait()
 }
 
 // RunOnce claims one queued attempt and runs it to its end. It reports
@@ -197,7 +171,7 @@ func (w *Worker) execute(parent context.Context, c *Claim) {
 		case errors.Is(cause, errCancelRequested):
 			outcome = domain.Outcome{Status: domain.StatusCancelled, Artifact: outcome.Artifact, Failure: &domain.Failure{
 				Stage: outcome.Failure.Stage, Code: domain.CodeCancelled, Message: "cancelled on request; the build stopped"}}
-		case errors.Is(cause, errShutdown):
+		case parent.Err() != nil:
 			outcome = domain.Outcome{Status: domain.StatusInterrupted, Artifact: outcome.Artifact, Failure: &domain.Failure{
 				Stage: outcome.Failure.Stage, Code: domain.CodeInterrupted, Message: "the builder shut down while the attempt ran; retry to build again"}}
 		}

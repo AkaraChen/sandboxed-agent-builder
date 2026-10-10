@@ -96,7 +96,7 @@ func setup(t *testing.T) *env {
 	e.service = &app.Service{Store: store, Resolver: e.resolver, Policy: func() spec.Policy { return policy }, Log: log}
 	e.worker = &app.Worker{
 		Store: store, Executor: e.exec, Publisher: e.pub, Secrets: map[string][]byte{"tok": []byte("very-secret-token")}, Log: log,
-		Config: app.WorkerConfig{ID: "w1", Concurrency: 1, Poll: 10 * time.Millisecond, Lease: 3 * time.Second, WorkDir: t.TempDir(), MaxLogBytes: 1 << 20, Grace: time.Second},
+		Config: app.WorkerConfig{ID: "w1", Concurrency: 1, Poll: 10 * time.Millisecond, Lease: 3 * time.Second, WorkDir: t.TempDir(), MaxLogBytes: 1 << 20},
 	}
 	return e
 }
@@ -385,7 +385,6 @@ func TestReconcile(t *testing.T) {
 
 func TestShutdownInterruptsRunningAttempts(t *testing.T) {
 	e := setup(t)
-	e.worker.Config.Grace = 50 * time.Millisecond
 	started := make(chan struct{})
 	e.exec.fn = func(ctx context.Context, _ app.BuildRequest, _ app.LogFunc) (app.Image, error) {
 		close(started)

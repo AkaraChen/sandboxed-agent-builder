@@ -195,7 +195,7 @@ func serve(log *slog.Logger, args []string) error {
 		Store: store, Fetch: git, Executor: daemon, Publisher: publisher, Secrets: secrets, Log: log,
 		Config: app.WorkerConfig{
 			ID: workerID, Concurrency: c.Worker.Concurrency, Poll: c.Worker.PollInterval, Lease: c.Worker.Lease,
-			WorkDir: filepath.Join(c.DataDir, "work"), MaxLogBytes: c.Logs.MaxBytesPerAttempt, Grace: c.Worker.ShutdownGrace,
+			WorkDir: filepath.Join(c.DataDir, "work"), MaxLogBytes: c.Logs.MaxBytesPerAttempt,
 		},
 	}
 

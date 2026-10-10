@@ -23,11 +23,10 @@ type Config struct {
 		Host string `yaml:"host"`
 	} `yaml:"docker"`
 	Worker struct {
-		ID            string        `yaml:"id"`
-		Concurrency   int           `yaml:"concurrency"`
-		PollInterval  time.Duration `yaml:"pollInterval"`
-		Lease         time.Duration `yaml:"lease"`
-		ShutdownGrace time.Duration `yaml:"shutdownGrace"`
+		ID           string        `yaml:"id"`
+		Concurrency  int           `yaml:"concurrency"`
+		PollInterval time.Duration `yaml:"pollInterval"`
+		Lease        time.Duration `yaml:"lease"`
 	} `yaml:"worker"`
 	Logs struct {
 		MaxBytesPerAttempt int64 `yaml:"maxBytesPerAttempt"`
@@ -96,9 +95,6 @@ func Load(path string) (*Config, error) {
 	}
 	if c.Worker.Lease == 0 {
 		c.Worker.Lease = 30 * time.Second
-	}
-	if c.Worker.ShutdownGrace == 0 {
-		c.Worker.ShutdownGrace = 20 * time.Second
 	}
 	if c.Logs.MaxBytesPerAttempt == 0 {
 		c.Logs.MaxBytesPerAttempt = 8 << 20

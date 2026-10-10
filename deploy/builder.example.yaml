@@ -10,7 +10,6 @@ worker:
   concurrency: 2           # attempts built at once by this process
   pollInterval: 1s
   lease: 30s               # renewed every lease/3; expired leases are reconciled
-  shutdownGrace: 20s       # then running attempts are stopped and recorded interrupted
 
 logs:
   maxBytesPerAttempt: 8388608   # later lines are dropped and the attempt marked truncated
