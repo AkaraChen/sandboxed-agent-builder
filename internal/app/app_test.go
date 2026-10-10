@@ -359,7 +359,7 @@ func TestPublishFailureIsRecorded(t *testing.T) {
 func TestReconcile(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
-	r := &app.Reconciler{Store: e.store, Executor: e.exec, Publisher: e.pub, ID: "rec", Lease: time.Minute, Log: e.worker.Log}
+	r := e.worker
 
 	// A worker claimed three attempts and died: one finished its image,
 	// one did not, one (registry) built but its push is unconfirmed.
@@ -375,7 +375,7 @@ func TestReconcile(t *testing.T) {
 	e.exec.images[built.Attempt.ID] = &app.Image{ID: "sha256:built", Ref: app.DaemonRef(built.Build.ID, built.Attempt.ID)}
 	e.exec.images[unpublished.Attempt.ID] = &app.Image{ID: "sha256:built2"}
 
-	n, err := r.RunOnce(ctx)
+	n, err := r.Reconcile(ctx)
 	if err != nil || n != 3 {
 		t.Fatalf("reconciled %d %v", n, err)
 	}
@@ -393,7 +393,7 @@ func TestReconcile(t *testing.T) {
 	if c, _ := e.store.Claim(ctx, "alive", time.Now(), time.Now().Add(time.Hour)); c == nil {
 		t.Fatal("no claim")
 	}
-	if n, _ := r.RunOnce(ctx); n != 0 {
+	if n, _ := r.Reconcile(ctx); n != 0 {
 		t.Fatalf("reconciled a live attempt")
 	}
 	if a := e.current(t, live.Build.ID); a.Status != domain.StatusRunning {

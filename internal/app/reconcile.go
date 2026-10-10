@@ -3,47 +3,22 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"time"
 
 	"github.com/akarachen/sandboxed-agent-builder/internal/domain"
 	"github.com/akarachen/sandboxed-agent-builder/internal/spec"
 )
 
-// Reconciler settles running attempts whose worker stopped renewing its
+// Reconcile settles running attempts whose worker stopped renewing its
 // lease (a crash, a restart, a lost database connection). A Docker build
 // does not continue across builder restarts, so the only question is
 // whether the attempt's result exists: the attempt's own tag and labels in
 // the daemon, and in registry mode its manifest in the registry. A
 // confirmed result is recorded as recovered success; anything else is
 // interrupted and waits for an explicit retry.
-type Reconciler struct {
-	Store     Store
-	Executor  Executor
-	Publisher Publisher
-	ID        string
-	Lease     time.Duration
-	Log       *slog.Logger
-}
-
-// Run reconciles now and then every interval until ctx is done.
-func (r *Reconciler) Run(ctx context.Context, interval time.Duration) {
-	for {
-		if n, err := r.RunOnce(ctx); err != nil {
-			r.Log.Error("reconciling attempts failed", "err", err)
-		} else if n > 0 {
-			r.Log.Info("reconciled attempts", "count", n)
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(interval):
-		}
-	}
-}
-
-// RunOnce settles the attempts expired now and returns how many it settled.
-func (r *Reconciler) RunOnce(ctx context.Context) (int, error) {
+//
+// It returns how many attempts it settled.
+func (r *Worker) Reconcile(ctx context.Context) (int, error) {
 	now := time.Now().UTC()
 	expired, err := r.Store.Expired(ctx, now, 50)
 	if err != nil {
@@ -51,7 +26,7 @@ func (r *Reconciler) RunOnce(ctx context.Context) (int, error) {
 	}
 	n := 0
 	for _, a := range expired {
-		c, err := r.Store.TakeOver(ctx, a.ID, r.ID, now, now.Add(r.Lease))
+		c, err := r.Store.TakeOver(ctx, a.ID, r.Config.ID, now, now.Add(r.Config.Lease))
 		if err != nil {
 			r.Log.Warn("taking over an attempt failed", "attempt_id", a.ID, "err", err)
 			continue
@@ -66,7 +41,7 @@ func (r *Reconciler) RunOnce(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-func (r *Reconciler) settle(ctx context.Context, c *Claim) bool {
+func (r *Worker) settle(ctx context.Context, c *Claim) bool {
 	log := r.Log.With("build_id", c.Build.ID, "attempt_id", c.Attempt.ID, "generation", c.Lease.Generation)
 	var rs spec.Resolved
 	_ = json.Unmarshal(c.Build.ResolvedSpec, &rs)

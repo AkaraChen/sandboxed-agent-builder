@@ -59,9 +59,27 @@ func DaemonRef(buildID, attemptID string) string {
 	return "sandboxed-agent-builder/" + buildID + ":" + attemptID
 }
 
-// Run claims and runs attempts until ctx is done, then gives running
-// attempts Config.Grace to finish before stopping them.
+// Run claims and runs attempts until ctx is done, reconciling expired
+// attempts every lease period, then gives running attempts Config.Grace to
+// finish before stopping them.
 func (w *Worker) Run(ctx context.Context) {
+	reconciled := make(chan struct{})
+	go func() {
+		defer close(reconciled)
+		for {
+			if n, err := w.Reconcile(ctx); err != nil {
+				w.Log.Error("reconciling attempts failed", "err", err)
+			} else if n > 0 {
+				w.Log.Info("reconciled attempts", "count", n)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(w.Config.Lease):
+			}
+		}
+	}()
+	defer func() { <-reconciled }()
 	stop := make(chan struct{})
 	work, cancelWork := context.WithCancelCause(context.WithoutCancel(ctx))
 	var wg sync.WaitGroup

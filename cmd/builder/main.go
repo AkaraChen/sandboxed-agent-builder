@@ -1,5 +1,5 @@
 // Command builder is sandboxed-agent-builder's composition root: it reads
-// the configuration and wires the API, the worker, the reconciler, the
+// the configuration and wires the API, the worker (which also reconciles), the
 // SQLite store, the Docker executor and the optional registry together.
 //
 //	builder [serve] -config builder.yaml
@@ -202,7 +202,6 @@ func serve(log *slog.Logger, args []string) error {
 			WorkDir: filepath.Join(c.DataDir, "work"), MaxLogBytes: c.Logs.MaxBytesPerAttempt, Grace: c.Worker.ShutdownGrace,
 		},
 	}
-	reconciler := &app.Reconciler{Store: store, Executor: daemon, Publisher: publisher, ID: workerID + "-reconciler", Lease: c.Worker.Lease, Log: log}
 
 	var callers []api.Caller
 	for _, cl := range c.Auth.Callers {
@@ -222,9 +221,8 @@ func serve(log *slog.Logger, args []string) error {
 	}
 	httpServer := &http.Server{Addr: c.Listen, Handler: server.Handler(), ReadHeaderTimeout: 10 * time.Second}
 
-	done := make(chan struct{}, 2)
+	done := make(chan struct{}, 1)
 	go func() { worker.Run(ctx); done <- struct{}{} }()
-	go func() { reconciler.Run(ctx, c.Worker.Lease); done <- struct{}{} }()
 	errc := make(chan error, 1)
 	go func() {
 		log.Info("builder listening", "addr", c.Listen, "worker_id", workerID, "platform", platform, "registry", c.Registry.Enabled)
@@ -241,7 +239,6 @@ func serve(log *slog.Logger, args []string) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = httpServer.Shutdown(shutdownCtx)
-	<-done
 	<-done
 	return err
 }
