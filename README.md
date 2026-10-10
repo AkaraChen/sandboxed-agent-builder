@@ -6,7 +6,24 @@
 
 ## 当前阶段
 
-架构设计阶段，尚未实现可运行服务。设计依据为 AXP 任务 #43，采用干净架构。
+Go + chi 实现的可运行服务，采用干净架构；SQLite 持久化，经 Docker socket 使用 daemon 内置的 BuildKit 构建，可选内置 Distribution registry。验证记录见 [docs/verification.md](docs/verification.md)。
+
+## 运行
+
+需要 Go 1.26、git 和 Docker（BuildKit 随 Docker daemon 提供）。
+
+```sh
+go build -o builder ./cmd/builder
+printf '%s\n' "$TOKEN" | ./builder hash-token          # 填入配置 auth.callers[].tokenSha256
+./builder serve -config deploy/builder.example.yaml
+```
+
+容器部署见 [deploy/compose.yaml](deploy/compose.yaml)（挂载 Docker socket 等同于宿主机 root 权限，只在可信环境运行）。
+
+```sh
+go vet ./... && go test -race ./...
+go test -race -tags docker ./internal/adapter/docker   # 需要 Docker
+```
 
 ## 职责
 
@@ -21,14 +38,17 @@ AXP 保存 Agent 环境配置和构建参数，关联 `buildId` 与镜像结果�
 
 ## 产品选择
 
-- 基础镜像只选官方 Alpine、Debian slim 和完整 Debian；默认 Debian slim，Alpine 经过兼容性验证后开放。不使用 Ubuntu。
+- 基础镜像只选官方 Alpine、Debian slim 和完整 Debian；默认 Debian slim。Alpine 3.22 已在 linux/amd64 通过验证，由配置 `alpineVerified` 开放。不使用 Ubuntu。
 - Agent runtime 只支持 Codex，通过构建时最新稳定版 oar 驱动，记录实际解析版本。
 - 兼容 Agent Plugin 的 hook、MCP 和 skill；hook 的 runtime 适配贡献给 akhook 上游。
 - 支持逐项生成 RUN 步骤的 build 脚本，以及打包到镜像、启动时执行的 startup 脚本。
-- 默认交付本地 Docker 镜像；规划可选的内置 Distribution registry。
+- 默认交付本地 Docker 镜像；可选内置 Distribution registry，推送确认后交付 `repository@digest`。
 
 ## 文档
 
+- [API](docs/api.md)
+- [镜像运行契约](docs/runtime-contract.md)
+- [验证记录](docs/verification.md)
 - [架构与构建生命周期](docs/architecture.md)
 - [设计交付与实现顺序](docs/roadmap.md)
 - [构建参数、产物与插件计划](docs/build-contract.md)
@@ -38,4 +58,3 @@ AXP 保存 Agent 环境配置和构建参数，关联 `buildId` 与镜像结果�
 - [AXP](https://github.com/AkaraChen/axp)
 - [oar](https://github.com/botiverse/oar)
 
-实现语言、数据库选型及部署拓扑尚待设计评审确定。

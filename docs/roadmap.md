@@ -1,6 +1,8 @@
 # 设计交付与实现顺序
 
-当前只整理设计。目标是具有数据库的异步镜像构建服务，交付物为镜像；调用方负责 Agent 运行。
+目标是具有数据库的异步镜像构建服务，交付物为镜像；调用方负责 Agent 运行。
+
+第 1-8 步已实现并验证（[verification.md](verification.md)），第 9 步的 AXP 对接在 AXP 侧进行。未完成项：PostgreSQL adapter、插件 MCP URL 中的运行时变量、arm64 与多节点验证。
 
 ## 实现顺序
 

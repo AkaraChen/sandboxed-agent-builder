@@ -111,8 +111,63 @@ oar 是产物中的 runtime 驱动依赖，builder 不通过它开启会话。oa
 
 提供构建支持的 runtime/插件兼容矩阵，无法满足的配置明确拒绝。运行时 hooks、审批、会话恢复需由调用方和产物集成验证；不因镜像构建成功就承诺这些能力可用。现有 AXP plugins-go 可评估复用，插件定义不重复复制进 prompt。
 
-## 数据库与部署决策
+## 实现（Go + chi）
 
-数据库是必要依赖，具体选型待评审。SQLite 适合单机持久化部署；多个 API/worker 实例或执行节点共同工作时优先 PostgreSQL。Docker socket 是执行依赖，数据库和 Docker 状态不能作为一个原子事务提交，需要持久化状态与恢复核对。
+### 干净架构与最简实现
 
-待确定：实现语言、数据库选型、worker 并发和租约策略、Docker/BuildKit 版本、registry 输出、临时凭据接口、日志/产物保留策略与 OTel 关联字段。
+| | 最简实现（handler 直接调用 Docker 与 SQL） | 干净架构（采用） |
+| --- | --- | --- |
+| 代码量 | 少，单包即可 | 多出端口接口与装配代码 |
+| 状态规则 | 散落在 handler 与 worker 中 | 集中在领域与应用层，状态转换、幂等、租约、取消、核对各有一处实现 |
+| 测试 | 需要真实 Docker 与数据库 | 应用层用假执行器在真实 SQLite 上测并发、取消、租约丢失与恢复 |
+| 演进 | 换数据库或日志存储要改用例 | 新增 adapter（PostgreSQL、外部日志）不改用例 |
+
+### 包结构
+
+```text
+cmd/builder                 composition root：配置、OTel、装配；serve / registry-gc / hash-token
+internal/domain             Build、Attempt、状态与转换、Failure、Artifact、错误
+internal/app                用例（Service）、Worker、Reconciler、日志批量写入；端口：Store、Resolver、Planner、Executor、Publisher、Secrets、Clock、IDs
+internal/spec               请求规格、默认值与校验（Policy）、锁定规格 Resolved、规范化哈希
+internal/plugin             Agent Plugin 读取与校验，编译为 Codex 原生配置与 akhook 规则
+internal/plan               构建上下文与 Dockerfile 生成、镜像入口脚本
+internal/api                chi 路由、认证、错误映射、分页
+internal/adapter/sqlite     Store：迁移、事务领取、租约代次、日志
+internal/adapter/docker     Executor：Docker SDK + daemon 内置 BuildKit；镜像 digest；推送
+internal/adapter/registry   内置 distribution/v3 registry 与 Publisher
+internal/adapter/resolve    Resolver：基础镜像 digest、npm、Node.js、akhook 提交、插件
+internal/adapter/gitsource  git CLI 拉取并锁定插件提交
+internal/config             配置文件与 build secret 来源
+```
+
+依赖方向：`api`、`adapter/*` → `app` → `spec`、`domain`。领域与应用层不引用 Docker、SQL 或 HTTP 类型。
+
+### 数据库选型
+
+| | SQLite（采用） | PostgreSQL |
+| --- | --- | --- |
+| 部署 | 嵌入、单文件，随数据目录备份 | 额外服务 |
+| 并发领取 | `BEGIN IMMEDIATE` 串行化写事务，同机多进程共享文件也安全 | `FOR UPDATE SKIP LOCKED`，适合多节点 |
+| 适用 | 单 Docker daemon 的单节点（当前拓扑：Docker socket 决定了执行在一台机器上） | 多台 API/worker 节点、多个 daemon |
+
+驱动为 `modernc.org/sqlite`（纯 Go，无 cgo，`-race` 可用）。迁移是嵌入的 SQL 文件，按序号在事务中执行并记入 `schema_migrations`。`Store` 接口与事务语义（领取、代次条件写入）不依赖 SQLite 特性，PostgreSQL adapter 可按同一接口实现。
+
+### 执行与恢复
+
+- worker 在事务中把最早的 queued 尝试改为 running，代次加一，租约默认 30 秒，每 10 秒续期；续期同时取回取消请求。所有写入（日志、结果）都以 (attempt, worker, generation) 为条件，过期 worker 的写入返回 `ErrStaleLease` 并放弃。
+- 构建经 Docker socket 劫持 `/grpc`、`/session` 连接 daemon 内置的 BuildKit（与 buildx docker driver 相同），用 moby exporter 写入 daemon 镜像库。每个尝试有专属 tag `sandboxed-agent-builder/<buildId>:<attemptId>` 和 build/attempt label。取消即取消 Solve 的 context；BuildKit 在客户端会话结束时停止构建，`Build` 在 Solve 返回后才返回。
+- 核对器定期（每个租约周期）接管租约过期的 running 尝试（代次加一，挡住旧 worker），在 daemon 中查该尝试的 tag 与 label，registry 模式再 `HEAD` manifest：确认则补录成功（`recovered`），否则 `interrupted`，等待显式重试。daemon 查询失败时不做判断，下一轮再试。
+- 优雅关闭：停止领取，等待宽限期，然后停止仍在运行的构建并记为 interrupted。
+
+### registry
+
+内置 registry 使用 `distribution/v3` 的 handler 与 filesystem 存储驱动，独立端口；可选 htpasswd 基本认证与 TLS。发布：daemon 打 `<publicHost>/<repository>:<attemptId>` tag 并推送，读取推送报告的 digest，再由 builder 对 registry `HEAD` 核对 digest 一致后才记成功，返回 `repository@digest`；任何一步失败记为 `publish` 阶段失败，保留本地产物。`publicHost` 必须是 daemon 可达的地址：builder 在容器中运行时，daemon 解析的是宿主机网络，示例部署因此使用 host 网络。builder 不删除 registry 内容；`builder registry-gc` 在 registry 停止时清理未引用的 blob（`-untagged` 同时清理无 tag 的 manifest）。本地镜像同样不自动删除，清理由运维按调用方仍在使用的引用决定。
+
+### 其他决策
+
+- worker 并发默认 2；租约 30 秒；日志每尝试 8 MiB；轮询间隔建议 2 秒（`Retry-After`）。
+- 临时凭据：build secret 由运维在配置中声明来源（环境变量或文件），规格只引用 ID，执行时经 BuildKit session 提供，值在日志入库前脱敏，不进入数据库、规格或镜像层。运行凭据由调用方在启动容器时注入，见[运行契约](runtime-contract.md)。
+- OTel：设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 时导出 trace，每个尝试一个 `build.attempt` span，属性 `build.id`、`build.attempt.id`、`build.attempt.number`、`build.spec_digest`；结构化日志同样带 `build_id`、`attempt_id`。
+- 认证：静态 bearer token（配置中保存 sha256），一个 token 一个调用方作用域。
+
+验证结果见 [verification.md](verification.md)，API 见 [api.md](api.md)。
