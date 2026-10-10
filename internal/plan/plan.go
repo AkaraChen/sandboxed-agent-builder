@@ -53,13 +53,6 @@ func Write(r spec.Resolved, fetch Fetcher, dir string) (*Plan, error) {
 			return nil, fmt.Errorf("plugin %s: %w", rp.Name, err)
 		}
 		src := filepath.Join(repo, filepath.FromSlash(rp.Path))
-		digest, err := plugin.ContentDigest(src)
-		if err != nil {
-			return nil, fmt.Errorf("plugin %s: %w", rp.Name, err)
-		}
-		if digest != rp.ContentDigest {
-			return nil, fmt.Errorf("plugin %s: content %s differs from the locked %s", rp.Name, digest, rp.ContentDigest)
-		}
 		p, err := plugin.Read(src)
 		if err != nil {
 			return nil, err

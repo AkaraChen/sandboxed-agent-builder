@@ -59,11 +59,6 @@ func TestReadAndCompile(t *testing.T) {
 	if err != nil || !strings.Contains(hooks, "id: probe/r") || !strings.Contains(hooks, "/opt/agent/plugins/probe/hook") {
 		t.Fatalf("%v\n%s", err, hooks)
 	}
-	d1, _ := ContentDigest(dir)
-	os.WriteFile(filepath.Join(dir, "setup"), []byte("#!/bin/sh\necho changed\n"), 0o755)
-	if d2, _ := ContentDigest(dir); d1 == d2 {
-		t.Fatal("digest did not change")
-	}
 }
 
 func TestRejections(t *testing.T) {

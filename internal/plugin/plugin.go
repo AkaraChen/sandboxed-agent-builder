@@ -18,13 +18,9 @@ package plugin
 import (
 	"bufio"
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -318,54 +314,6 @@ func readJSON(path string, into any) error {
 		return fmt.Errorf("%s: %w", filepath.Base(path), err)
 	}
 	return nil
-}
-
-// ContentDigest hashes the files under dir (paths, executable bits and
-// contents), skipping .git.
-func ContentDigest(dir string) (string, error) {
-	h := sha256.New()
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() && d.Name() == ".git" {
-			return filepath.SkipDir
-		}
-		if d.IsDir() {
-			return nil
-		}
-		rel, _ := filepath.Rel(dir, path)
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		switch {
-		case info.Mode()&fs.ModeSymlink != 0:
-			target, err := os.Readlink(path)
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(h, "L %s %s\n", filepath.ToSlash(rel), target)
-			return nil
-		case !info.Mode().IsRegular():
-			return fmt.Errorf("%s: not a regular file", rel)
-		}
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		fh := sha256.New()
-		if _, err := io.Copy(fh, f); err != nil {
-			return err
-		}
-		fmt.Fprintf(h, "F %s %t %x\n", filepath.ToSlash(rel), info.Mode()&0o111 != 0, fh.Sum(nil))
-		return nil
-	})
-	if err != nil {
-		return "", err
-	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // CheckSet checks plugins that go into one image together: unique names

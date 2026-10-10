@@ -125,13 +125,8 @@ func (r *Resolver) Resolve(ctx context.Context, s spec.Spec) (spec.Resolved, err
 		if err != nil {
 			return out, invalid("plugins[%d]: %v", i, err)
 		}
-		digest, err := plugin.ContentDigest(dir)
-		if err != nil {
-			return out, invalid("plugins[%d]: %v", i, err)
-		}
 		rp := spec.ResolvedPlugin{
-			Name: pl.Name, Version: pl.Version, Source: p.Source, Revision: p.Revision, Commit: commit, Path: p.Path,
-			ContentDigest: digest, Setup: pl.Setup, Hooks: plugin.HookEvents(pl),
+			Name: pl.Name, Version: pl.Version, Source: p.Source, Revision: p.Revision, Commit: commit, Path: p.Path, Setup: pl.Setup, Hooks: plugin.HookEvents(pl),
 		}
 		for n := range pl.Servers {
 			rp.MCPServers = append(rp.MCPServers, plugin.ServerID(pl.Name, n))

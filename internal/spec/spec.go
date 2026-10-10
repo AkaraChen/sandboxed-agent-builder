@@ -353,19 +353,16 @@ type ResolvedAkhook struct {
 }
 
 type ResolvedPlugin struct {
-	Name     string `json:"name"`
-	Version  string `json:"version,omitempty"`
-	Source   string `json:"source"`
-	Revision string `json:"revision"`
-	Commit   string `json:"commit"`
-	Path     string `json:"path,omitempty"`
-	// ContentDigest is the plugin directory's tree hash; the planner checks
-	// the files it builds from against it.
-	ContentDigest string   `json:"contentDigest"`
-	MCPServers    []string `json:"mcpServers,omitempty"`
-	Skills        []string `json:"skills,omitempty"`
-	Hooks         []string `json:"hooks,omitempty"`
-	Setup         bool     `json:"setup,omitempty"`
+	Name       string   `json:"name"`
+	Version    string   `json:"version,omitempty"`
+	Source     string   `json:"source"`
+	Revision   string   `json:"revision"`
+	Commit     string   `json:"commit"`
+	Path       string   `json:"path,omitempty"`
+	MCPServers []string `json:"mcpServers,omitempty"`
+	Skills     []string `json:"skills,omitempty"`
+	Hooks      []string `json:"hooks,omitempty"`
+	Setup      bool     `json:"setup,omitempty"`
 }
 
 // Digest identifies r.

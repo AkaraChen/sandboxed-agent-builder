@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akarachen/sandboxed-agent-builder/internal/plugin"
 	"github.com/akarachen/sandboxed-agent-builder/internal/spec"
 )
 
@@ -21,7 +20,6 @@ func TestWrite(t *testing.T) {
 	os.MkdirAll(filepath.Join(pdir, "skills", "one"), 0o755)
 	os.WriteFile(filepath.Join(pdir, "plugin.json"), []byte(`{"name":"probe","version":"1","description":"d"}`), 0o644)
 	os.WriteFile(filepath.Join(pdir, "skills", "one", "SKILL.md"), []byte("---\nname: one\ndescription: d\n---\n"), 0o644)
-	digest, _ := plugin.ContentDigest(pdir)
 
 	r := spec.Resolved{
 		Contract: 1, Platform: "linux/amd64",
@@ -30,7 +28,7 @@ func TestWrite(t *testing.T) {
 		Agent:   spec.ResolvedAgent{Type: spec.AgentCodex, Codex: &spec.ResolvedPackage{Package: "@openai/codex", Version: "1.2.3"}},
 		Oar:     spec.ResolvedPackage{Package: "@botiverse/oar-cli", Version: "0.51.0"},
 		Akhook:  spec.ResolvedAkhook{Repository: "https://github.com/aghub-app/akhook", Commit: strings.Repeat("a", 40), Toolchain: spec.ResolvedImage{Image: "rust:1-alpine", Digest: "sha256:rust"}},
-		Plugins: []spec.ResolvedPlugin{{Name: "probe", Source: "https://x", Commit: strings.Repeat("b", 40), Path: "plugins/probe", ContentDigest: digest}},
+		Plugins: []spec.ResolvedPlugin{{Name: "probe", Source: "https://x", Commit: strings.Repeat("b", 40), Path: "plugins/probe"}},
 		Scripts: spec.Scripts{
 			Build:   []spec.Script{{Name: "first", Run: "echo 1"}, {Name: "second", Run: "echo 2", Secrets: []string{"npm"}}},
 			Startup: []spec.Script{{Name: "Prepare workspace!", Run: "echo start"}},
@@ -78,11 +76,6 @@ func TestWrite(t *testing.T) {
 		t.Fatalf("secrets %v", p.Secrets)
 	}
 
-	// A changed plugin no longer matches the locked digest.
-	os.WriteFile(filepath.Join(pdir, "extra"), []byte("x"), 0o644)
-	if _, err := Write(r, dirFetcher(repo), t.TempDir()); err == nil {
-		t.Fatal("changed plugin accepted")
-	}
 }
 
 // TestEntrypoint runs the generated entrypoint with a stub oar: startup
