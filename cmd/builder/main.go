@@ -4,14 +4,11 @@
 //
 //	builder [serve] -config builder.yaml
 //	builder registry-gc -config builder.yaml [-dry-run] [-untagged]
-//	builder hash-token            (reads a token on stdin, prints its sha256)
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"flag"
@@ -57,8 +54,6 @@ func main() {
 		err = serve(log, args)
 	case "registry-gc":
 		err = registryGC(args)
-	case "hash-token":
-		err = hashToken()
 	default:
 		err = fmt.Errorf("unknown command %q", cmd)
 	}
@@ -66,16 +61,6 @@ func main() {
 		log.Error("builder failed", "err", err)
 		os.Exit(1)
 	}
-}
-
-func hashToken() error {
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil && line == "" {
-		return err
-	}
-	sum := sha256.Sum256([]byte(strings.TrimRight(line, "\r\n")))
-	fmt.Println(hex.EncodeToString(sum[:]))
-	return nil
 }
 
 func registryGC(args []string) error {

@@ -125,7 +125,7 @@ oar 是产物中的 runtime 驱动依赖，builder 不通过它开启会话。oa
 ### 包结构
 
 ```text
-cmd/builder                 composition root：配置、OTel、装配；serve / registry-gc / hash-token
+cmd/builder                 composition root：配置、OTel、装配；serve / registry-gc
 internal/domain             Build、Attempt、状态与转换、Failure、Artifact、错误
 internal/app                用例（Service）、Worker、Reconciler、日志批量写入；端口：Store、Resolver、Planner、Executor、Publisher、Secrets、Clock、IDs
 internal/spec               请求规格、默认值与校验（Policy）、锁定规格 Resolved、规范化哈希

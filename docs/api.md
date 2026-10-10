@@ -1,6 +1,6 @@
 # 构建 API
 
-所有接口返回 JSON。`/healthz`、`/readyz` 之外都需要 `Authorization: Bearer <token>`；token 在配置里以 sha256 登记（`builder hash-token`），每个 token 对应一个调用方作用域。构建只对创建它的调用方可见，其他调用方得到 404。
+所有接口返回 JSON。`/healthz`、`/readyz` 之外都需要 `Authorization: Bearer <token>`；token 在配置里以 sha256 登记（`printf %s "$TOKEN" | sha256sum`），每个 token 对应一个调用方作用域。构建只对创建它的调用方可见，其他调用方得到 404。
 
 错误统一为：
 

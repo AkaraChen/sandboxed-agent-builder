@@ -14,7 +14,7 @@ Go + chi 实现的可运行服务，采用干净架构；SQLite 持久化，经 
 
 ```sh
 go build -o builder ./cmd/builder
-printf '%s\n' "$TOKEN" | ./builder hash-token          # 填入配置 auth.callers[].tokenSha256
+printf %s "$TOKEN" | sha256sum   # 填入配置 auth.callers[].tokenSha256
 ./builder serve -config deploy/builder.example.yaml
 ```
 

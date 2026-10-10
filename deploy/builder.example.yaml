@@ -16,7 +16,7 @@ logs:
 
 auth:
   callers:
-    # tokenSha256: `printf '%s\n' "$TOKEN" | builder hash-token`
+    # tokenSha256: `printf %s "$TOKEN" | sha256sum`
     - id: axp
       tokenSha256: 0000000000000000000000000000000000000000000000000000000000000000
   # anonymousCaller: dev   # local development only
