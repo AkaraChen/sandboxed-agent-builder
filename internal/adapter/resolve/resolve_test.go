@@ -21,8 +21,8 @@ func upstream(t *testing.T, latest string) *Resolver {
 		}
 		w.Write([]byte(`{"dist-tags":{"latest":"` + latest + `","next":"0.52.0-rc.1"},"versions":{"0.50.0":{},"0.51.0":{},"0.52.0-rc.1":{}}}`))
 	})
-	mux.HandleFunc("/node/index.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`[{"version":"v25.1.0","files":["linux-x64"]},{"version":"v24.9.0","files":["linux-x64"]},{"version":"v24.10.0","files":["linux-arm64"]},{"version":"v24.8.1","files":["linux-x64"]}]`))
+	mux.HandleFunc("/node/latest-v24.x/SHASUMS256.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("cccc  node-v24.9.0-darwin-arm64.tar.gz\nbbbb  node-v24.9.0-linux-x64.tar.gz\n"))
 	})
 	mux.HandleFunc("/node/v24.9.0/SHASUMS256.txt", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("aaaa  node-v24.9.0-linux-x64.tar.xz\nbbbb  node-v24.9.0-linux-x64.tar.gz\n"))
@@ -59,5 +59,11 @@ func TestNode(t *testing.T) {
 	var se *domain.SpecError
 	if _, err := r.node(context.Background(), "26", "linux/amd64", false); !errors.As(err, &se) {
 		t.Fatalf("missing line: %v", err)
+	}
+	if n, err := r.node(context.Background(), "24.9.0", "linux/amd64", false); err != nil || n.SHA256 != "bbbb" {
+		t.Fatalf("exact: %+v %v", n, err)
+	}
+	if _, err := r.node(context.Background(), "24.9.0", "linux/arm64", false); !errors.As(err, &se) {
+		t.Fatalf("missing build: %v", err)
 	}
 }

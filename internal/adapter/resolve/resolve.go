@@ -4,7 +4,6 @@
 package resolve
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,8 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/akarachen/sandboxed-agent-builder/internal/adapter/gitsource"
@@ -213,93 +212,41 @@ func nodeArch(platform string) (string, error) {
 	return "", invalid("platform %s has no Node.js build", platform)
 }
 
-// node locks the newest release of a major line (or an exact version) that
-// has a build for the platform, with its published sha256.
+// node locks Node.js: a major line resolves to the version of the official
+// latest-v<major>.x release; the tarball and its sha256 come from that
+// version's SHASUMS256.txt, on the unofficial musl builds for Alpine.
 func (r *Resolver) node(ctx context.Context, want, platform string, musl bool) (spec.ResolvedNode, error) {
 	arch, err := nodeArch(platform)
 	if err != nil {
 		return spec.ResolvedNode{}, err
 	}
+	version := want
+	if !strings.Contains(want, ".") {
+		sums, err := r.get(ctx, fmt.Sprintf("%s/latest-v%s.x/SHASUMS256.txt", r.NodeDist, want), "")
+		if errors.Is(err, errNotFound) {
+			return spec.ResolvedNode{}, invalid("node.version: there is no Node.js %s line", want)
+		}
+		m := nodeVersionRE.FindStringSubmatch(string(sums))
+		if err != nil || m == nil {
+			return spec.ResolvedNode{}, fmt.Errorf("node latest-v%s.x: %v", want, err)
+		}
+		version = m[1]
+	}
 	dist, file := r.NodeDist, "linux-"+arch
 	if musl {
 		dist, file = r.NodeMuslDist, "linux-"+arch+"-musl"
 	}
-	body, err := r.get(ctx, dist+"/index.json", "")
-	if err != nil {
-		return spec.ResolvedNode{}, fmt.Errorf("node index: %w", err)
-	}
-	var index []struct {
-		Version string   `json:"version"`
-		Files   []string `json:"files"`
-	}
-	if err := json.Unmarshal(body, &index); err != nil {
-		return spec.ResolvedNode{}, fmt.Errorf("node index: %w", err)
-	}
-	best, bestKey := "", [3]int{}
-	for _, rel := range index {
-		v := strings.TrimPrefix(rel.Version, "v")
-		key, ok := parseVersion(v)
-		if !ok || !contains(rel.Files, file) {
-			continue
-		}
-		if strings.Contains(want, ".") {
-			if v == want {
-				best = v
-				break
-			}
-			continue
-		}
-		if strconv.Itoa(key[0]) == want && (best == "" || less(bestKey, key)) {
-			best, bestKey = v, key
-		}
-	}
-	if best == "" {
-		return spec.ResolvedNode{}, invalid("node.version: no Node.js %s release for %s", want, file)
-	}
-	name := fmt.Sprintf("node-v%s-%s.tar.gz", best, file)
-	sums, err := r.get(ctx, fmt.Sprintf("%s/v%s/SHASUMS256.txt", dist, best), "")
-	if err != nil {
+	name := fmt.Sprintf("node-v%s-%s.tar.gz", version, file)
+	sums, err := r.get(ctx, fmt.Sprintf("%s/v%s/SHASUMS256.txt", dist, version), "")
+	if err != nil && !errors.Is(err, errNotFound) {
 		return spec.ResolvedNode{}, fmt.Errorf("node checksums: %w", err)
 	}
-	sc := bufio.NewScanner(strings.NewReader(string(sums)))
-	for sc.Scan() {
-		if f := strings.Fields(sc.Text()); len(f) == 2 && f[1] == name {
-			return spec.ResolvedNode{Version: best, URL: fmt.Sprintf("%s/v%s/%s", dist, best, name), SHA256: f[0]}, nil
+	for _, line := range strings.Split(string(sums), "\n") {
+		if f := strings.Fields(line); len(f) == 2 && f[1] == name {
+			return spec.ResolvedNode{Version: version, URL: fmt.Sprintf("%s/v%s/%s", dist, version, name), SHA256: f[0]}, nil
 		}
 	}
-	return spec.ResolvedNode{}, fmt.Errorf("node checksums: %s is not listed", name)
+	return spec.ResolvedNode{}, invalid("node.version: no Node.js %s build %s", version, name)
 }
 
-func parseVersion(v string) ([3]int, bool) {
-	parts := strings.Split(v, ".")
-	if len(parts) != 3 {
-		return [3]int{}, false
-	}
-	var out [3]int
-	for i, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil {
-			return out, false
-		}
-		out[i] = n
-	}
-	return out, true
-}
-
-func less(a, b [3]int) bool {
-	for i := range a {
-		if a[i] != b[i] {
-			return a[i] < b[i]
-		}
-	}
-	return false
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
+var nodeVersionRE = regexp.MustCompile(`node-v(\d+\.\d+\.\d+)-`)
